@@ -181,10 +181,6 @@ def markdown_file_to_notes(filename: str) -> list[NoteData]:
 
 
 def _parse_markdown_file(filename: str) -> list[dict[str, Any]]:
-    """Parse the content of a Markdown file
-
-    This must adhere to the specification of {update_from_file} from cli.py!
-    """
     defaults: dict[str, Any] = {
         "model": "Basic",
         "markdown": True,
