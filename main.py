@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 import pickle
 import re
 import sqlite3
+import uuid
 from contextlib import contextmanager, redirect_stdout
 from dataclasses import dataclass
 from io import TextIOWrapper
@@ -361,10 +363,10 @@ def _parse_markdown_file(filename: str) -> list[dict[str, Any]]:
                                 current_note["nid"] = str(external_ids_map[v])
                     elif k == "nid":
                         if defaults["external_ids_file"]:
-                            console.print(
+                            print(
                                 f"[red]Error: Cannot use {k} in note when external-ids mode is active.[/red]"
                             )
-                            raise Abort()
+                            raise SystemExit()
                         current_note[k] = v
                     else:
                         current_note[k] = v
@@ -1032,7 +1034,7 @@ def _added_notes_postprocessing(
     """Common postprocessing after 'apy add[-from-file]' or 'apy update-from-file'."""
     n_notes = len(notes)
     if n_notes == 0:
-        console.print("No notes added or updated")
+        print("No notes added or updated")
         return
 
     decks = [a.col.decks.name(c.did) for n in notes for c in n.n.cards()]
