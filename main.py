@@ -7,12 +7,10 @@ import pickle
 import re
 import sqlite3
 import uuid
-from contextlib import contextmanager, redirect_stdout
 from dataclasses import dataclass
-from io import TextIOWrapper
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Generator, Self, override
+from typing import Any, Self, override
 
 import markdown
 from bs4 import BeautifulSoup, Tag
@@ -417,14 +415,6 @@ def _parse_markdown_file(filename: str) -> list[dict[str, Any]]:
     return notes
 
 
-@contextmanager
-def suppress_stdout() -> Generator[TextIOWrapper, Any, Any]:
-    """A context manager that redirects stdout to devnull"""
-    with open(os.devnull, "w", encoding="utf8") as fnull:
-        with redirect_stdout(fnull) as out:
-            yield out
-
-
 class Anki:
     """My Anki collection wrapper class."""
 
@@ -446,8 +436,7 @@ class Anki:
         self._init_load_collection()
         self._init_load_config()
 
-        with suppress_stdout():
-            self.today: int = self.col.sched.today
+        self.today: int = self.col.sched.today
 
         self.model_name_to_id: dict[str, int] = {
             m["name"]: m["id"] for m in self.col.models.all()
@@ -588,8 +577,7 @@ class Anki:
             t2 = progress.add_task("", total=None, name="media")
 
             # Perform main sync
-            with suppress_stdout():
-                _ = self.col.sync_collection(auth, True)
+            _ = self.col.sync_collection(auth, True)
             progress.update(t1, total=1, completed=1, description="[green]done!")
 
             # Perform media sync
