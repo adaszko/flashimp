@@ -661,7 +661,6 @@ class Anki:
         filename: str,
         tags: str = "",
         deck: str | None = None,
-        update_origin_file: bool = False,
         respect_note_ids: bool = False,
         link_duplicates: bool = False,
     ) -> list[Note]:
@@ -671,7 +670,6 @@ class Anki:
             filename: Path to the markdown file containing notes
             tags: Additional tags to add to the notes
             deck: Default deck for notes without a deck specified
-            update_origin_file: If True, update the original file with note IDs
             respect_note_ids: If True, then this function looks for nid: or cid: headers
                               in the file to determine if a note should be updated
                               rather than added.
@@ -714,85 +712,15 @@ class Anki:
             else:
                 internal_ids_map[idx] = nid
 
-        if update_origin_file and has_missing_nids:
+        if has_missing_nids:
             if len(external_ids_map) > 0:
                 self._update_external_ids_file(
                     filename,
                     original_content,
                     external_ids_map,
                 )
-            else:
-                self._update_file_with_note_ids(
-                    filename,
-                    original_content,
-                    internal_ids_map,
-                )
 
         return notes
-
-    def _update_file_with_note_ids(
-        self,
-        filename: str,
-        content: str,
-        note_id_map: dict[int, str],
-    ) -> None:
-        """Update the original markdown file with note IDs
-
-        This function adds nid: headers to notes in the file that don't have them.
-
-        Args:
-            filename: Path to the markdown file
-            content: Original content of the file
-            note_id_map: A dict from note index to note ids for notes that were
-                         added/updated
-        """
-        # Find all '# Note' or similar headers in the file
-        note_headers = re.finditer(r"^# .*$", content, re.MULTILINE)
-        note_positions = [match.start() for match in note_headers]
-
-        if not note_positions:
-            return  # No notes found in file
-
-        # Add an extra position at the end to simplify boundary handling
-        note_positions.append(len(content))
-
-        # Extract each note's section and check if it needs to be updated
-        # Keep content before first '# Note'
-        updated_content: list[str] = [content[0 : note_positions[0]]]
-        for i in range(len(note_positions) - 1):
-            start = note_positions[i]
-            end = note_positions[i + 1]
-
-            # Get the section for this note
-            section = content[start:end]
-
-            # Check if this section already has an nid
-            if re.search(r"^nid:", section, re.MULTILINE):
-                # Already has an ID, keep as is
-                updated_content.append(section)
-            else:
-                # No ID, add the note ID from our updated notes
-                # We need to find where to insert the ID line (after model, tags, etc.)
-                lines = section.split("\n")
-
-                # Find a good position to insert the ID (after model, tags, deck)
-                insert_pos = 1  # Default: after the first line (the title)
-                for j, line in enumerate(lines[1:], 1):
-                    # Look for model:, tags:, deck: lines
-                    if re.match(r"^(model|tag[s]?|deck|markdown|md):", line):
-                        insert_pos = j + 1  # Insert after this line
-
-                # If we have a note ID for this position, insert it
-                if i in note_id_map:
-                    lines.insert(insert_pos, f"nid: {note_id_map[i]}")
-                    updated_content.append("\n".join(lines))
-                else:
-                    # Couldn't match this section to a note, keep unchanged
-                    updated_content.append(section)
-
-        # Write back the updated content
-        with open(filename, "w", encoding="utf-8") as f:
-            _ = f.write("".join(updated_content))
 
     def _update_external_ids_file(
         self, filename: str, content: str, external_ids_map: dict[str, str]
@@ -998,7 +926,6 @@ def main():
     with Anki(**cfg) as a:
         notes = a.add_notes_from_file(
             str("flashcards.md"),
-            update_origin_file=True,
             respect_note_ids=True,
         )
         _added_notes_postprocessing(a, notes, "Updated/added")
