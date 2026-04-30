@@ -6,6 +6,7 @@ import os
 import pickle
 import re
 import sqlite3
+import sys
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -800,26 +801,61 @@ class MathPostprocessor(Postprocessor):
         return text
 
 
-def import_flashcards(anki: Anki, markdown: str) -> dict[str, int]:
+class LockedNotFound(RuntimeError):
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self.message)
+
+
+def import_flashcards(
+    anki_: Anki, markdown: str, locked_ids: dict[str, int]
+) -> dict[str, int]:
+    from anki.errors import NotFoundError
+    from anki.notes import NoteId
+
     flashcards = parser.flashcards_from_markdown(markdown)
     # TODO partition flashcards by model to avoid switching models
-    ids = {}
+    ids = locked_ids.copy()
+    locked_not_found = {}
     for fc in flashcards:
-        model = anki.set_model(fc.model())
-        model_field_names = [field["name"] for field in model["flds"]]
-        assert len(model_field_names) == len(fc.fields()), (
-            model_field_names,
-            fc.fields(),
-        )
-        notetype = anki.col.models.current(for_deck=False)
-        new_note = anki.col.new_note(notetype)
-        new_note.fields = [convert_text_to_field(f, True) for f in fc.fields()]
-        anki.col.addNote(new_note)
-        ids[fc.id()] = new_note.id
+        if fc.id() in locked_ids:
+            note_id = locked_ids[fc.id()]
+            try:
+                existing_note = anki_.col.get_note(NoteId(note_id))
+            except NotFoundError as _e:
+                locked_not_found[fc.id()] = note_id
+                continue
+            existing_note.fields = [convert_text_to_field(f, True) for f in fc.fields()]
+            anki_.col.update_note(existing_note)
+        else:
+            model = anki_.set_model(fc.model())
+            model_field_names = [field["name"] for field in model["flds"]]
+            assert len(model_field_names) == len(fc.fields()), (
+                model_field_names,
+                fc.fields(),
+            )
+            notetype = anki_.col.models.current(for_deck=False)
+            new_note = anki_.col.new_note(notetype)
+            new_note.fields = [convert_text_to_field(f, True) for f in fc.fields()]
+            anki_.col.addNote(new_note)
+            ids[fc.id()] = new_note.id
+
+    if len(locked_not_found) > 0:
+        raise LockedNotFound(locked_not_found)
+
     return ids
 
 
-def main():
+def get_locked_ids(lockfile_path: Path) -> dict[str, int]:
+    try:
+        text = lockfile_path.read_text()
+    except FileNotFoundError:
+        return {}
+    ids = json.loads(text)
+    return ids
+
+
+def main() -> int:
     cfg["base_path"] = Path.home() / "Library/Application Support/Anki2"
     if False:
         with Anki(**cfg) as a:
@@ -830,12 +866,21 @@ def main():
             _added_notes_postprocessing(a, notes, "Updated/added")
     else:
         with Anki(**cfg) as anki:
-            with open("flashcards.md") as f:
-                markdown = f.read()
-                ids = import_flashcards(anki, markdown)
-                js = json.dumps(ids)
-                Path("flashcards.lock").write_text(js)
+            markdown = Path("flashcards.md").read_text()
+            lockfile_path = Path("flashcards.lock")
+            locked_ids = get_locked_ids(lockfile_path)
+            try:
+                new_locked_ids = import_flashcards(anki, markdown, locked_ids)
+            except LockedNotFound as e:
+                print("Flashcards exist in the lock file but not in the database")
+                for id, nid in e.args[0].items():
+                    print(f"{id}: {nid}")
+                print(f"Try deleting {lockfile_path} file")
+                return 1
+            js = json.dumps(new_locked_ids)
+            lockfile_path.write_text(js)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
