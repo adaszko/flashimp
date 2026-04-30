@@ -9,7 +9,6 @@ import sqlite3
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from types import TracebackType
 from typing import Any, Self
 
 import markdown
@@ -23,6 +22,8 @@ from markdown.extensions.fenced_code import FencedCodeExtension
 from markdown.extensions.footnotes import FootnoteExtension
 from markdown.postprocessors import Postprocessor
 from markdown.preprocessors import Preprocessor
+
+import parser
 
 cfg = {
     "markdown_pygments_style": None,
@@ -491,9 +492,9 @@ class Anki:
 
     def __exit__(
         self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
+        _exc_type,
+        _exc_val,
+        _exc_tb,
     ) -> None:
         if self.modified:
             print("Database was modified.")
@@ -799,14 +800,36 @@ class MathPostprocessor(Postprocessor):
         return text
 
 
+def import_flashcards(anki: Anki, markdown: str):
+    flashcards = parser.flashcards_from_markdown(markdown)
+    # TODO partition flashcards by model to avoid switching models
+    for fc in flashcards:
+        model = anki.set_model(fc.model())
+        model_field_names = [field["name"] for field in model["flds"]]
+        assert len(model_field_names) == len(fc.fields()), (
+            model_field_names,
+            fc.fields(),
+        )
+        notetype = anki.col.models.current(for_deck=False)
+        new_note = anki.col.new_note(notetype)
+        new_note.fields = [convert_text_to_field(f, True) for f in fc.fields()]
+        anki.col.addNote(new_note)
+
+
 def main():
     cfg["base_path"] = Path.home() / "Library/Application Support/Anki2"
-    with Anki(**cfg) as a:
-        notes = a.add_notes_from_file(
-            str("flashcards-apy.md"),
-            respect_note_ids=True,
-        )
-        _added_notes_postprocessing(a, notes, "Updated/added")
+    if False:
+        with Anki(**cfg) as a:
+            notes = a.add_notes_from_file(
+                str("flashcards-apy.md"),
+                respect_note_ids=True,
+            )
+            _added_notes_postprocessing(a, notes, "Updated/added")
+    else:
+        with Anki(**cfg) as anki:
+            with open("flashcards.md") as f:
+                markdown = f.read()
+                import_flashcards(anki, markdown)
 
 
 if __name__ == "__main__":

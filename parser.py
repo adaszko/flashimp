@@ -1,17 +1,18 @@
-from enum import IntEnum
+from enum import StrEnum
 from typing import List, Protocol, cast
 
 import tree_sitter_markdown
 from tree_sitter import Language, Parser
 
 
-class FLASHCARD(IntEnum):
-    BASIC = 0
-    CLOZE = 1
+class MODEL(StrEnum):
+    BASIC = "Basic"
+    CLOZE = "Cloze"
 
 
 class Flashcard(Protocol):
-    def type(self) -> FLASHCARD: ...
+    def model(self) -> MODEL: ...
+    def fields(self) -> list[str]: ...
 
 
 class Basic(Flashcard):
@@ -20,8 +21,11 @@ class Basic(Flashcard):
         self._front = front
         self._back = back
 
-    def type(self) -> FLASHCARD:
-        return FLASHCARD.BASIC
+    def model(self) -> MODEL:
+        return MODEL.BASIC
+
+    def fields(self) -> list[str]:
+        return [self._front, self._back]
 
     def id(self) -> str:
         return self._id
@@ -34,18 +38,25 @@ class Basic(Flashcard):
 
 
 class Cloze(Flashcard):
-    def __init__(self, id: str, front: str):
+    def __init__(self, id: str, text: str, back_extra: str = ""):
         self._id = id
-        self._body = front
+        self._text = text
+        self._back_extra = back_extra
 
-    def type(self) -> FLASHCARD:
-        return FLASHCARD.CLOZE
+    def model(self) -> MODEL:
+        return MODEL.CLOZE
+
+    def fields(self) -> list[str]:
+        return [self._text, self._back_extra]
 
     def id(self) -> str:
         return self._id
 
-    def body(self) -> str:
-        return self._body
+    def text(self) -> str:
+        return self._text
+
+    def back_extra(self) -> str:
+        return self._back_extra
 
 
 def make_parser():
@@ -108,14 +119,17 @@ foo {{c1::bar}} baz
 
     assert len(fcs) == 2
     basic = fcs[0]
-    assert basic.type() == FLASHCARD.BASIC
+    assert basic.model() == MODEL.BASIC
     basic = cast(Basic, basic)
     assert basic.id() == "Card1"
     assert basic.front() == "Front"
     assert basic.back() == "Back"
+    assert basic.fields() == ["Front", "Back"]
 
     cloze = fcs[1]
-    assert cloze.type() == FLASHCARD.CLOZE
+    assert cloze.model() == MODEL.CLOZE
     cloze = cast(Cloze, cloze)
     assert cloze.id() == "Card2"
-    assert cloze.body() == "foo {{c1::bar}} baz"
+    assert cloze.text() == "foo {{c1::bar}} baz"
+    assert cloze.back_extra() == ""
+    assert cloze.fields() == ["foo {{c1::bar}} baz", ""]
