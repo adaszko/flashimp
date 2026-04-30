@@ -11,7 +11,13 @@ class MODEL(StrEnum):
 
 
 class Flashcard(Protocol):
+    # Model name in Anki
     def model(self) -> MODEL: ...
+
+    # Unique ID given by human
+    def id(self) -> str: ...
+
+    # Respective field values for the given model
     def fields(self) -> list[str]: ...
 
 
@@ -109,11 +115,11 @@ def flashcards_from_markdown(markdown: str) -> List[Flashcard]:
 
 def test_flashcards_from_markdown():
     fcs = flashcards_from_markdown("""
-# Card1
+# Id1
 Front
 ***
 Back
-# Card2
+# Id2
 foo {{c1::bar}} baz
 """)
 
@@ -121,7 +127,7 @@ foo {{c1::bar}} baz
     basic = fcs[0]
     assert basic.model() == MODEL.BASIC
     basic = cast(Basic, basic)
-    assert basic.id() == "Card1"
+    assert basic.id() == "Id1"
     assert basic.front() == "Front"
     assert basic.back() == "Back"
     assert basic.fields() == ["Front", "Back"]
@@ -129,7 +135,7 @@ foo {{c1::bar}} baz
     cloze = fcs[1]
     assert cloze.model() == MODEL.CLOZE
     cloze = cast(Cloze, cloze)
-    assert cloze.id() == "Card2"
+    assert cloze.id() == "Id2"
     assert cloze.text() == "foo {{c1::bar}} baz"
     assert cloze.back_extra() == ""
     assert cloze.fields() == ["foo {{c1::bar}} baz", ""]

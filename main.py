@@ -800,9 +800,10 @@ class MathPostprocessor(Postprocessor):
         return text
 
 
-def import_flashcards(anki: Anki, markdown: str):
+def import_flashcards(anki: Anki, markdown: str) -> dict[str, int]:
     flashcards = parser.flashcards_from_markdown(markdown)
     # TODO partition flashcards by model to avoid switching models
+    ids = {}
     for fc in flashcards:
         model = anki.set_model(fc.model())
         model_field_names = [field["name"] for field in model["flds"]]
@@ -814,6 +815,8 @@ def import_flashcards(anki: Anki, markdown: str):
         new_note = anki.col.new_note(notetype)
         new_note.fields = [convert_text_to_field(f, True) for f in fc.fields()]
         anki.col.addNote(new_note)
+        ids[fc.id()] = new_note.id
+    return ids
 
 
 def main():
@@ -829,7 +832,9 @@ def main():
         with Anki(**cfg) as anki:
             with open("flashcards.md") as f:
                 markdown = f.read()
-                import_flashcards(anki, markdown)
+                ids = import_flashcards(anki, markdown)
+                js = json.dumps(ids)
+                Path("flashcards.lock").write_text(js)
 
 
 if __name__ == "__main__":
