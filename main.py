@@ -803,7 +803,7 @@ def main():
     cfg["base_path"] = Path.home() / "Library/Application Support/Anki2"
     with Anki(**cfg) as a:
         notes = a.add_notes_from_file(
-            str("flashcards.md"),
+            str("flashcards-apy.md"),
             respect_note_ids=True,
         )
         _added_notes_postprocessing(a, notes, "Updated/added")
