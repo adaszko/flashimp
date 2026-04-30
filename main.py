@@ -10,7 +10,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Self, override
+from typing import Any, Self
 
 import markdown
 from bs4 import BeautifulSoup, Tag
@@ -25,7 +25,6 @@ from markdown.postprocessors import Postprocessor
 from markdown.preprocessors import Preprocessor
 
 cfg = {
-    "auto_sync": False,
     "markdown_pygments_style": None,
     "markdown_latex_mode": None,
 }
@@ -45,48 +44,9 @@ class Note:
         self.field_names: list[str] = list(self.n.keys())
         self.suspended: bool = any(c.queue == -1 for c in self.n.cards())
 
-    @override
-    def __repr__(self) -> str:
-        """Convert note to Markdown format"""
-        lines = [
-            "# Note",
-            f"model: {self.model_name}",
-            f"tags: {self.get_tag_string()}",
-            f"nid: {self.n.id}",
-        ]
-
-        if self.a.n_decks > 1:
-            lines += [f"deck: {self.get_deck()}"]
-
-        if not any(check_if_generated_from_markdown(f) for f in self.n.values()):
-            lines += ["markdown: false"]
-
-        lines += [""]
-
-        for name, field in self.n.items():
-            lines.append(f"## {name}")
-            lines.append(convert_field_to_text(field))
-            lines.append("")
-
-        return "\n".join(lines)
-
     def delete(self) -> None:
         """Delete the note"""
         self.a.delete_notes(self.n.id)
-
-    def has_consistent_markdown(self) -> bool:
-        """Check if markdown fields are consistent with html values"""
-        return any(check_if_inconsistent_markdown(f) for f in self.n.values())
-
-    def toggle_markdown(self, index: int | None = None) -> None:
-        """Toggle markdown on a field"""
-        if index is None:
-            field_name = choose(self.field_names, "Toggle markdown for field:")
-            index = self.field_names.index(field_name)
-
-        self.n.fields[index] = toggle_field_to_markdown(self.n.fields[index])
-        self.n.flush()
-        self.a.modified = True
 
     def get_deck(self) -> str:
         """Return which deck the note belongs to"""
@@ -416,8 +376,6 @@ def _parse_markdown_file(filename: str) -> list[dict[str, Any]]:
 
 
 class Anki:
-    """My Anki collection wrapper class."""
-
     def __init__(
         self,
         base_path: str | None = None,
@@ -538,79 +496,11 @@ class Anki:
         exc_tb: TracebackType | None,
     ) -> None:
         if self.modified:
-            if cfg["auto_sync"]:
-                self.sync()
-            else:
-                print("Database was modified.")
-                if self._profile is not None and self._profile["syncKey"]:
-                    print("[blue]Remember to sync!")
+            print("Database was modified.")
+            if self._profile is not None and self._profile["syncKey"]:
+                print("[blue]Remember to sync!")
 
         self.col.close()
-
-    def sync(self) -> None:
-        """Sync collection to AnkiWeb"""
-        from anki.sync import SyncAuth
-
-        if self._profile is None:
-            return
-
-        hkey = self._profile.get("syncKey")
-        if not hkey:
-            return
-
-        auth = SyncAuth(
-            hkey=hkey,
-            endpoint=self._profile.get("currentSyncUrl")
-            or self._profile.get("customSyncUrl")
-            or None,
-            io_timeout_secs=self._profile.get("networkTimeout") or 30,
-        )
-
-        with Progress(
-            TextColumn(
-                "Syncing {task.fields[name]} [green]…[/green] {task.description}"
-            ),
-            SpinnerColumn(spinner_name="point", finished_text=""),
-            console=console,
-        ) as progress:
-            t1 = progress.add_task("", total=None, name="deck")
-            t2 = progress.add_task("", total=None, name="media")
-
-            # Perform main sync
-            _ = self.col.sync_collection(auth, True)
-            progress.update(t1, total=1, completed=1, description="[green]done!")
-
-            # Perform media sync
-            with cd(self.col.media.dir()):
-                status_str = ""
-                self.col.sync_media(auth)
-                try:
-                    while True:
-                        time.sleep(0.01)
-                        status = self.col.media_sync_status()
-                        if p := status.progress:
-                            status_str = f"{p.added}, {p.removed}, {p.checked}".lower()
-                            progress.update(t2, description=f"[blue]({status_str})")
-                        if not status.active:
-                            break
-
-                except Exception as error:
-                    if "sync cancelled" in str(error):
-                        progress.update(
-                            t2,
-                            total=1,
-                            completed=1,
-                            description="[yellow]cancelled!",
-                        )
-                        return
-                    raise Abort() from error
-
-                progress.update(
-                    t2,
-                    total=1,
-                    completed=1,
-                    description=f"[blue]({status_str}) [green]done!",
-                )
 
     def delete_notes(self, ids: NoteId | list[NoteId]) -> None:
         """Delete notes by note ids"""
