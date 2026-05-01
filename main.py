@@ -29,10 +29,16 @@ class LockedNotFound(RuntimeError):
 
 
 @dataclass
+class LockedNote:
+    mid: int
+    nid: int
+
+
+@dataclass
 class Lockfile:
     profile: str
     deck: str
-    notes: dict[str, int]
+    notes: dict[str, LockedNote]  # id -> (nid, notetypeid)
 
 
 def get_last_loaded_profile(base_path: Path):
@@ -82,7 +88,7 @@ def import_flashcards(
     locked_not_found = {}
     for fc in flashcards:
         if fc.id() in input_notes:
-            note_id = input_notes[fc.id()]
+            note_id = input_notes[fc.id()].nid
             try:
                 existing_note = col.get_note(NoteId(note_id))
             except NotFoundError as _e:
@@ -99,10 +105,10 @@ def import_flashcards(
                 model_field_names,
                 fc.fields(),
             )
-            new_note = col.new_note(model)
-            new_note.fields = [parser.html_from_markdown(f) for f in fc.fields()]
-            col.addNote(new_note)
-            output_lockfile.notes[fc.id()] = new_note.id
+            note = col.new_note(model)
+            note.fields = [parser.html_from_markdown(f) for f in fc.fields()]
+            col.addNote(note)
+            output_lockfile.notes[fc.id()] = LockedNote(mid=model["id"], nid=note.id)
 
     if len(locked_not_found) > 0:
         raise LockedNotFound(locked_not_found)
@@ -116,7 +122,10 @@ def read_lockfile(lockfile_path: Path) -> Lockfile | None:
     except FileNotFoundError:
         return None
     obj = json.loads(text)
-    result = Lockfile(profile=obj["profile"], deck=obj["deck"], notes=obj["notes"])
+    notes = {
+        id: LockedNote(nid=n["nid"], mid=n["mid"]) for id, n in obj["notes"].items()
+    }
+    result = Lockfile(profile=obj["profile"], deck=obj["deck"], notes=notes)
     return result
 
 
