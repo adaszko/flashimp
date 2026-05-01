@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import Self
 
+from anki.collection import Collection
+
 import parser
 
 
@@ -38,8 +40,7 @@ def get_collection_db_path(base_path: Path, profile_name: str):
     return str(base_path / profile_name / "collection.anki2")
 
 
-def get_collection(collection_db_path: Path):
-    from anki.collection import Collection
+def get_collection(collection_db_path: Path) -> Collection:
 
     saved_cwd = os.getcwd()
 
@@ -75,29 +76,12 @@ class Anki:
     ) -> None:
         self.col.close()
 
-    def get_model(self, model_name: str) -> NotetypeDict | None:
+    def get_model(self, model_name: str) -> NotetypeDict:
         """Get model from model name"""
         from anki.models import NotetypeId
 
-        model_id = self.model_name_to_id.get(model_name)
-        if not isinstance(model_id, int):
-            return None
-
+        model_id = self.model_name_to_id[model_name]
         return self.col.models.get(NotetypeId(model_id))
-
-    def set_model(self, model_name: str) -> NotetypeDict:
-        """Set current model based on model name"""
-        current = self.col.models.current(for_deck=False)
-        if current["name"] == model_name:
-            return current
-
-        model = self.get_model(model_name)
-        if model is None:
-            print(f'Model "{model_name}" was not recognized!')
-            raise SystemExit()
-
-        self.col.models.set_current(model)
-        return model
 
 
 class LockedNotFound(RuntimeError):
@@ -127,7 +111,7 @@ def import_flashcards(
             existing_note.fields = [parser.html_from_markdown(f) for f in fc.fields()]
             anki_.col.update_note(existing_note)
         else:
-            model = anki_.set_model(fc.model())
+            model = anki_.get_model(fc.model())
             model_field_names = [field["name"] for field in model["flds"]]
             assert len(model_field_names) == len(fc.fields()), (
                 model_field_names,
