@@ -41,14 +41,11 @@ def get_collection_db_path(base_path: Path, profile_name: str):
 
 
 def get_collection(collection_db_path: Path) -> Collection:
-
     saved_cwd = os.getcwd()
-
     try:
         col = Collection(str(collection_db_path))
     finally:
         os.chdir(saved_cwd)
-
     return col
 
 
@@ -61,10 +58,6 @@ class Anki:
         collection_db_path = get_collection_db_path(base_path, last_loaded_profile)
         self.col = get_collection(collection_db_path)
 
-        self.model_name_to_id: dict[str, int] = {
-            m["name"]: m["id"] for m in self.col.models.all()
-        }
-
     def __enter__(self) -> Self:
         return self
 
@@ -75,13 +68,6 @@ class Anki:
         _exc_tb,
     ) -> None:
         self.col.close()
-
-    def get_model(self, model_name: str) -> NotetypeDict:
-        """Get model from model name"""
-        from anki.models import NotetypeId
-
-        model_id = self.model_name_to_id[model_name]
-        return self.col.models.get(NotetypeId(model_id))
 
 
 class LockedNotFound(RuntimeError):
@@ -111,7 +97,7 @@ def import_flashcards(
             existing_note.fields = [parser.html_from_markdown(f) for f in fc.fields()]
             anki_.col.update_note(existing_note)
         else:
-            model = anki_.get_model(fc.model())
+            model = anki_.col.models.by_name(fc.model())
             model_field_names = [field["name"] for field in model["flds"]]
             assert len(model_field_names) == len(fc.fields()), (
                 model_field_names,
