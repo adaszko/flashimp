@@ -6,7 +6,6 @@ import pickle
 import sqlite3
 import sys
 from pathlib import Path
-from typing import Self
 
 from anki.collection import Collection
 
@@ -47,27 +46,6 @@ def get_collection(collection_db_path: Path) -> Collection:
     finally:
         os.chdir(saved_cwd)
     return col
-
-
-class Anki:
-    def __init__(
-        self,
-        base_path: Path,
-    ):
-        last_loaded_profile = get_last_loaded_profile(base_path)
-        collection_db_path = get_collection_db_path(base_path, last_loaded_profile)
-        self.col = get_collection(collection_db_path)
-
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(
-        self,
-        _exc_type,
-        _exc_val,
-        _exc_tb,
-    ) -> None:
-        self.col.close()
 
 
 class LockedNotFound(RuntimeError):
@@ -124,23 +102,32 @@ def get_locked_ids(lockfile_path: Path) -> dict[str, int]:
     return ids
 
 
+def do_main(col: Collection, lockfile_path: Path):
+    markdown = Path("flashcards.md").read_text()
+    locked_ids = get_locked_ids(lockfile_path)
+    new_locked_ids = import_flashcards(col, markdown, locked_ids)
+    js = json.dumps(new_locked_ids)
+    lockfile_path.write_text(js)
+
+
 def main() -> int:
     base_path = Path.home() / "Library/Application Support/Anki2"
-    with Anki(base_path) as anki:
-        markdown = Path("flashcards.md").read_text()
-        lockfile_path = Path("flashcards.lock")
-        locked_ids = get_locked_ids(lockfile_path)
-        try:
-            new_locked_ids = import_flashcards(anki.col, markdown, locked_ids)
-        except LockedNotFound as e:
-            print("Flashcards exist in the lock file but not in the database")
-            for id, nid in e.args[0].items():
-                print(f"{id}: {nid}")
-            print(f"Try deleting {lockfile_path} file")
-            return 1
-        js = json.dumps(new_locked_ids)
-        lockfile_path.write_text(js)
-    return 0
+    lockfile_path = Path("flashcards.lock")
+    last_loaded_profile = get_last_loaded_profile(base_path)
+    collection_db_path = get_collection_db_path(base_path, last_loaded_profile)
+    col = get_collection(collection_db_path)
+    exitcode = 0
+    try:
+        do_main(col, lockfile_path)
+    except LockedNotFound as e:
+        print("Flashcards exist in the lock file but not in the database")
+        for id, nid in e.args[0].items():
+            print(f"{id}: {nid}")
+        print(f"Try deleting {lockfile_path} file")
+        exitcode = 1
+    finally:
+        col.close()
+    return exitcode
 
 
 if __name__ == "__main__":
