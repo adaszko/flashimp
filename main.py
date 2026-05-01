@@ -11,6 +11,7 @@ from anki.errors import NotFoundError
 from anki.notes import NoteId
 
 import parser
+from parser import Flashcard
 
 
 class UnknownModel(RuntimeError):
@@ -49,9 +50,8 @@ def get_last_loaded_profile(base_path: Path):
 
 
 def import_flashcards(
-    col: Collection, markdown: str, locked_ids: dict[str, int]
+    col: Collection, flashcards: list[Flashcard], locked_ids: dict[str, int]
 ) -> dict[str, int]:
-    flashcards = parser.flashcards_from_markdown(markdown)
     ids = locked_ids.copy()
     locked_not_found = {}
     for fc in flashcards:
@@ -96,7 +96,8 @@ def get_locked_ids(lockfile_path: Path) -> dict[str, int]:
 def do_main(col: Collection, lockfile_path: Path):
     markdown = Path("flashcards.md").read_text()
     locked_ids = get_locked_ids(lockfile_path)
-    new_locked_ids = import_flashcards(col, markdown, locked_ids)
+    flashcards = parser.flashcards_from_markdown(markdown)
+    new_locked_ids = import_flashcards(col, flashcards, locked_ids)
     js = json.dumps(new_locked_ids)
     lockfile_path.write_text(js)
 
