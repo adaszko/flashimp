@@ -10,34 +10,21 @@ from typing import Any, Self
 
 import parser
 
-cfg = {}
-
 
 class Anki:
     def __init__(
         self,
-        base_path: str | None = None,
-        collection_db_path: str | None = None,
-        profile_name: str | None = None,
-        **_kwargs: dict[str, Any],
+        base_path: Path,
     ):
-        self.modified: bool = False
-
         self._meta: Any = None
         self._collection_db_path: str = ""
-        self._profile_name: str = profile_name or ""
-        self._profile: dict[Any, Any] | None = None
 
-        self._init_load_profile(base_path, collection_db_path)
+        self._init_load_profile(base_path)
         self._init_load_collection()
-        self._init_load_config()
-
-        self.today: int = self.col.sched.today
 
         self.model_name_to_id: dict[str, int] = {
             m["name"]: m["id"] for m in self.col.models.all()
         }
-        self.model_names: list[str] = list(self.model_name_to_id.keys())
 
         self.deck_name_to_id: dict[str, int] = {
             d["name"]: d["id"] for d in self.col.decks.all()
@@ -45,19 +32,8 @@ class Anki:
         self.deck_names: KeysView[str] = self.deck_name_to_id.keys()
         self.n_decks: int = len(self.deck_names)
 
-    def _init_load_profile(
-        self, base_path_str: str | None, collection_db_path: str | None
-    ) -> None:
+    def _init_load_profile(self, base_path: Path) -> None:
         """Load the Anki profile from database"""
-        if base_path_str is None:
-            if collection_db_path:
-                self._collection_db_path = str(Path(collection_db_path).absolute())
-                return
-
-            print("Base path is not properly set!")
-            raise SystemExit()
-
-        base_path = Path(base_path_str)
         db_path = base_path / "prefs21.db"
 
         if not db_path.exists():
@@ -79,17 +55,11 @@ class Anki:
         finally:
             conn.close()
 
-        profiles_dict = {name: pickle.loads(data) for name, data in profiles}
-
-        if not self._profile_name:
-            self._profile_name = self._meta.get(
-                "last_loaded_profile_name", profiles[0][0]
-            )
+        self._profile_name = self._meta.get("last_loaded_profile_name", profiles[0][0])
 
         self._collection_db_path = str(
             base_path / self._profile_name / "collection.anki2"
         )
-        self._profile = profiles_dict[self._profile_name]
 
     def _init_load_collection(self) -> None:
         """Load the Anki collection"""
@@ -112,18 +82,6 @@ class Anki:
         # Restore CWD (because Anki changes it)
         os.chdir(save_cwd)
 
-    @staticmethod
-    def _init_load_config() -> None:
-        """Load custom configuration"""
-        from anki import latex
-
-        # Update LaTeX commands
-        # * Idea based on Anki addon #1546037973 ("Edit LaTeX build process")
-        if "pngCommands" in cfg:
-            latex.pngCommands = cfg["pngCommands"]
-        if "svgCommands" in cfg:
-            latex.svgCommands = cfg["svgCommands"]
-
     def __enter__(self) -> Self:
         return self
 
@@ -133,11 +91,6 @@ class Anki:
         _exc_val,
         _exc_tb,
     ) -> None:
-        if self.modified:
-            print("Database was modified.")
-            if self._profile is not None and self._profile["syncKey"]:
-                print("[blue]Remember to sync!")
-
         self.col.close()
 
     def delete_notes(self, ids: NoteId | list[NoteId]) -> None:
@@ -146,7 +99,6 @@ class Anki:
             ids = [ids]
 
         _ = self.col.remove_notes(ids)
-        self.modified = True
 
     def get_model(self, model_name: str) -> NotetypeDict | None:
         """Get model from model name"""
@@ -228,8 +180,8 @@ def get_locked_ids(lockfile_path: Path) -> dict[str, int]:
 
 
 def main() -> int:
-    cfg["base_path"] = Path.home() / "Library/Application Support/Anki2"
-    with Anki(**cfg) as anki:
+    base_path = Path.home() / "Library/Application Support/Anki2"
+    with Anki(base_path) as anki:
         markdown = Path("flashcards.md").read_text()
         lockfile_path = Path("flashcards.lock")
         locked_ids = get_locked_ids(lockfile_path)
