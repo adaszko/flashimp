@@ -35,10 +35,6 @@ def get_last_loaded_profile(base_path: Path):
     return _meta.get("last_loaded_profile_name", profiles[0][0])
 
 
-def get_collection_db_path(base_path: Path, profile_name: str):
-    return str(base_path / profile_name / "collection.anki2")
-
-
 def get_collection(collection_db_path: Path) -> Collection:
     saved_cwd = os.getcwd()
     try:
@@ -114,7 +110,7 @@ def main() -> int:
     base_path = Path.home() / "Library/Application Support/Anki2"
     lockfile_path = Path("flashcards.lock")
     last_loaded_profile = get_last_loaded_profile(base_path)
-    collection_db_path = get_collection_db_path(base_path, last_loaded_profile)
+    collection_db_path = base_path / last_loaded_profile / "collection.anki2"
     col = get_collection(collection_db_path)
     exitcode = 0
     try:
