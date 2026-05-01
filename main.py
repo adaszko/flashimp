@@ -13,6 +13,18 @@ from anki.notes import NoteId
 import parser
 
 
+class UnknownModel(RuntimeError):
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self.message)
+
+
+class LockedNotFound(RuntimeError):
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self.message)
+
+
 def get_last_loaded_profile(base_path: Path):
     prefs_db_path = base_path / "prefs21.db"
 
@@ -36,12 +48,6 @@ def get_last_loaded_profile(base_path: Path):
     return _meta.get("last_loaded_profile_name", profiles[0][0])
 
 
-class LockedNotFound(RuntimeError):
-    def __init__(self, message):
-        self.message = message
-        super().__init__(self.message)
-
-
 def import_flashcards(
     col: Collection, markdown: str, locked_ids: dict[str, int]
 ) -> dict[str, int]:
@@ -60,13 +66,14 @@ def import_flashcards(
             col.update_note(existing_note)
         else:
             model = col.models.by_name(fc.model())
+            if model is None:
+                raise UnknownModel(fc.model())
             model_field_names = [field["name"] for field in model["flds"]]
             assert len(model_field_names) == len(fc.fields()), (
                 model_field_names,
                 fc.fields(),
             )
-            notetype = col.models.current(for_deck=False)
-            new_note = col.new_note(notetype)
+            new_note = col.new_note(model)
             new_note.fields = [parser.html_from_markdown(f) for f in fc.fields()]
             col.addNote(new_note)
             ids[fc.id()] = new_note.id
