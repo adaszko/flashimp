@@ -87,12 +87,12 @@ def import_flashcards(
 
     locked_not_found = {}
     for fc in flashcards:
-        if fc.id() in input_notes:
-            note_id = input_notes[fc.id()].nid
+        if fc.human_given_id() in input_notes:
+            note_id = input_notes[fc.human_given_id()].nid
             try:
                 existing_note = col.get_note(NoteId(note_id))
             except NotFoundError as _e:
-                locked_not_found[fc.id()] = note_id
+                locked_not_found[fc.human_given_id()] = note_id
                 continue
             existing_note.fields = [parser.html_from_markdown(f) for f in fc.fields()]
             col.update_note(existing_note)
@@ -108,7 +108,9 @@ def import_flashcards(
             note = col.new_note(model)
             note.fields = [parser.html_from_markdown(f) for f in fc.fields()]
             col.addNote(note)
-            output_lockfile.notes[fc.id()] = LockedNote(mid=model["id"], nid=note.id)
+            output_lockfile.notes[fc.human_given_id()] = LockedNote(
+                mid=model["id"], nid=note.id
+            )
 
     if len(locked_not_found) > 0:
         raise LockedNotFound(locked_not_found)
