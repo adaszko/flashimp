@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import pickle
 import sqlite3
 import sys
@@ -33,15 +32,6 @@ def get_last_loaded_profile(base_path: Path):
         conn.close()
 
     return _meta.get("last_loaded_profile_name", profiles[0][0])
-
-
-def get_collection(collection_db_path: Path) -> Collection:
-    saved_cwd = os.getcwd()
-    try:
-        col = Collection(str(collection_db_path))
-    finally:
-        os.chdir(saved_cwd)
-    return col
 
 
 class LockedNotFound(RuntimeError):
@@ -111,7 +101,7 @@ def main() -> int:
     lockfile_path = Path("flashcards.lock")
     last_loaded_profile = get_last_loaded_profile(base_path)
     collection_db_path = base_path / last_loaded_profile / "collection.anki2"
-    col = get_collection(collection_db_path)
+    col = Collection(str(collection_db_path))
     exitcode = 0
     try:
         do_main(col, lockfile_path)
