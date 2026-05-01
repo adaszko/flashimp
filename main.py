@@ -1,33 +1,16 @@
 from __future__ import annotations
 
-import base64
 import json
 import os
 import pickle
-import re
 import sqlite3
 import sys
 from pathlib import Path
 from typing import Any, Self
 
-import markdown
-from bs4 import BeautifulSoup, Tag
-from markdown import Markdown
-from markdown.extensions import Extension
-from markdown.extensions.abbr import AbbrExtension
-from markdown.extensions.codehilite import CodeHiliteExtension
-from markdown.extensions.def_list import DefListExtension
-from markdown.extensions.fenced_code import FencedCodeExtension
-from markdown.extensions.footnotes import FootnoteExtension
-from markdown.postprocessors import Postprocessor
-from markdown.preprocessors import Preprocessor
-
 import parser
 
-cfg = {
-    "markdown_pygments_style": None,
-    "markdown_latex_mode": None,
-}
+cfg = {}
 
 
 class Anki:
@@ -190,138 +173,6 @@ class Anki:
         return model
 
 
-def convert_text_to_field(text: str, use_markdown: bool) -> str:
-    """Convert text to Anki field html."""
-    if use_markdown:
-        return _convert_markdown_to_field(text)
-
-    # Convert newlines to <br> tags
-    text = text.replace("\n", "<br />")
-    return _clean_html(text)
-
-
-def _convert_markdown_to_field(text: str) -> str:
-    """Convert Markdown to field HTML"""
-
-    # Return input text if it only contains allowed characters
-    if re.fullmatch(r"[a-zA-Z0-9æøåÆØÅ ,.?+-]*", text):
-        return text
-
-    # Prepare original markdown for restoring
-    # Note: convert newlines to <br> to make text readable in the Anki viewer
-    original_encoded = base64.b64encode(text.replace("\n", "<br />").encode()).decode()
-
-    # For convenience: Escape some common LaTeX constructs
-    text = text.replace(r"\\", r"\\\\")
-    text = text.replace(r"\{", r"\\{")
-    text = text.replace(r"\}", r"\\}")
-    text = text.replace(r"*}", r"\*}")
-
-    # Fix whitespaces in input
-    text = text.replace("\xc2\xa0", " ").replace("\xa0", " ")
-
-    # For convenience: Fix mathjax escaping
-    text = text.replace(r"\[", r"\\[")
-    text = text.replace(r"\]", r"\\]")
-    text = text.replace(r"\(", r"\\(")
-    text = text.replace(r"\)", r"\\)")
-
-    html = markdown.markdown(
-        text,
-        extensions=[
-            "tables",
-            AbbrExtension(),
-            CodeHiliteExtension(
-                noclasses=True,
-                linenums=False,
-                pygments_style=cfg["markdown_pygments_style"],
-                guess_lang=False,
-            ),
-            DefListExtension(),
-            FencedCodeExtension(),
-            FootnoteExtension(),
-            MathProtectExtension(cfg["markdown_latex_mode"]),
-        ],
-        output_format="html",
-    )
-
-    # Parse HTML and attach original markdown
-    soup = BeautifulSoup(html or "<div>&nbsp;</div>", "html.parser")
-    root = soup.find()
-    if isinstance(root, Tag):
-        root["data-original-markdown"] = original_encoded
-
-    return str(soup)
-
-
-def _clean_html(text: str) -> str:
-    """Clean up html text"""
-    text = text.replace(r"&lt;", "<")
-    text = text.replace(r"&gt;", ">")
-    text = text.replace(r"&amp;", "&")
-    text = text.replace(r"&nbsp;", " ")
-    text = re.sub(r"\<b\>\s*\<\/b\>", "", text)
-    text = re.sub(r"\<i\>\s*\<\/i\>", "", text)
-    text = re.sub(r"\<div\>\s*\<\/div\>", "", text)
-    return text.strip()
-
-
-class MathProtectExtension(Extension):
-    def __init__(self, markdown_latex_mode: str) -> None:
-        super().__init__()
-        self.markdown_latex_mode: str = markdown_latex_mode
-
-    def extendMarkdown(self, md: Markdown) -> None:  # pyright: ignore[reportImplicitOverride]
-        math_preprocessor = MathPreprocessor(md, self.markdown_latex_mode)
-        math_postprocessor = MathPostprocessor(md, math_preprocessor.placeholders)
-
-        md.preprocessors.register(math_preprocessor, "math_block_processor", 25)
-        md.postprocessors.register(math_postprocessor, "math_block_restorer", 25)
-
-
-class MathPreprocessor(Preprocessor):
-    def __init__(self, md: Markdown, markdown_latex_mode: str) -> None:
-        super().__init__(md)
-        self.counter: int = 0
-        self.placeholders: dict[str, str] = {}
-
-        # Apply latex translation based on specified latex mode
-        if markdown_latex_mode == "latex":
-            self.fmt_display: str = "[$$]{math}[/$$]"
-            self.fmt_inline: str = "[$]{math}[/$]"
-        else:
-            self.fmt_display = r"\[{math}\]"
-            self.fmt_inline = r"\({math}\)"
-
-    def run(self, lines: list[str]) -> list[str]:  # pyright: ignore[reportImplicitOverride]
-        def replacer(match: re.Match[str]) -> str:
-            placeholder = f"MATH-PLACEHOLDER-{self.counter}"
-            self.counter += 1
-
-            if matched := match.group(1):
-                self.placeholders[placeholder] = self.fmt_display.format(math=matched)
-            elif matched := match.group(2):
-                self.placeholders[placeholder] = self.fmt_inline.format(math=matched)
-
-            return placeholder
-
-        pattern = re.compile(r"\$\$(.*?)\$\$|\$(.*?)\$", re.DOTALL)
-        lines_joined = "\n".join(lines)
-        lines_processed = pattern.sub(replacer, lines_joined)
-        return lines_processed.split("\n")
-
-
-class MathPostprocessor(Postprocessor):
-    def __init__(self, md: Markdown, placeholders: dict[str, str]) -> None:
-        super().__init__(md)
-        self.placeholders: dict[str, str] = placeholders
-
-    def run(self, text: str) -> str:  # pyright: ignore[reportImplicitOverride]
-        for placeholder, math in self.placeholders.items():
-            text = text.replace(placeholder, math)
-        return text
-
-
 class LockedNotFound(RuntimeError):
     def __init__(self, message):
         self.message = message
@@ -346,7 +197,7 @@ def import_flashcards(
             except NotFoundError as _e:
                 locked_not_found[fc.id()] = note_id
                 continue
-            existing_note.fields = [convert_text_to_field(f, True) for f in fc.fields()]
+            existing_note.fields = [parser.html_from_markdown(f) for f in fc.fields()]
             anki_.col.update_note(existing_note)
         else:
             model = anki_.set_model(fc.model())
@@ -357,7 +208,7 @@ def import_flashcards(
             )
             notetype = anki_.col.models.current(for_deck=False)
             new_note = anki_.col.new_note(notetype)
-            new_note.fields = [convert_text_to_field(f, True) for f in fc.fields()]
+            new_note.fields = [parser.html_from_markdown(f) for f in fc.fields()]
             anki_.col.addNote(new_note)
             ids[fc.id()] = new_note.id
 

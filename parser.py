@@ -1,6 +1,7 @@
 from enum import StrEnum
 from typing import List, Protocol, cast
 
+import mistletoe
 from mistletoe import Document
 from mistletoe.block_token import Heading, Paragraph, ThematicBreak
 
@@ -114,6 +115,10 @@ def flashcards_from_markdown(markdown: str) -> List[Flashcard]:
             i += 1
 
     return flashcards
+
+
+def html_from_markdown(markdown: str) -> str:
+    return mistletoe.markdown(markdown)
 
 
 def test_flashcards_from_markdown():
