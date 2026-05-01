@@ -147,3 +147,8 @@ foo {{c1::bar}} baz
     assert cloze.text() == "foo {{c1::bar}} baz"
     assert cloze.back_extra() == ""
     assert cloze.fields() == ["foo {{c1::bar}} baz", ""]
+
+
+def test_html_from_markdown():
+    html = html_from_markdown("""foo **bar** baz""")
+    assert html.strip() == "<p>foo <strong>bar</strong> baz</p>"
