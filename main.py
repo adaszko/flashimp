@@ -77,7 +77,7 @@ class LockedNotFound(RuntimeError):
 
 
 def import_flashcards(
-    anki_: Anki, markdown: str, locked_ids: dict[str, int]
+    col: Collection, markdown: str, locked_ids: dict[str, int]
 ) -> dict[str, int]:
     from anki.errors import NotFoundError
     from anki.notes import NoteId
@@ -90,23 +90,23 @@ def import_flashcards(
         if fc.id() in locked_ids:
             note_id = locked_ids[fc.id()]
             try:
-                existing_note = anki_.col.get_note(NoteId(note_id))
+                existing_note = col.get_note(NoteId(note_id))
             except NotFoundError as _e:
                 locked_not_found[fc.id()] = note_id
                 continue
             existing_note.fields = [parser.html_from_markdown(f) for f in fc.fields()]
-            anki_.col.update_note(existing_note)
+            col.update_note(existing_note)
         else:
-            model = anki_.col.models.by_name(fc.model())
+            model = col.models.by_name(fc.model())
             model_field_names = [field["name"] for field in model["flds"]]
             assert len(model_field_names) == len(fc.fields()), (
                 model_field_names,
                 fc.fields(),
             )
-            notetype = anki_.col.models.current(for_deck=False)
-            new_note = anki_.col.new_note(notetype)
+            notetype = col.models.current(for_deck=False)
+            new_note = col.new_note(notetype)
             new_note.fields = [parser.html_from_markdown(f) for f in fc.fields()]
-            anki_.col.addNote(new_note)
+            col.addNote(new_note)
             ids[fc.id()] = new_note.id
 
     if len(locked_not_found) > 0:
@@ -131,7 +131,7 @@ def main() -> int:
         lockfile_path = Path("flashcards.lock")
         locked_ids = get_locked_ids(lockfile_path)
         try:
-            new_locked_ids = import_flashcards(anki, markdown, locked_ids)
+            new_locked_ids = import_flashcards(anki.col, markdown, locked_ids)
         except LockedNotFound as e:
             print("Flashcards exist in the lock file but not in the database")
             for id, nid in e.args[0].items():
