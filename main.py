@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 
 from anki.collection import Collection
+from anki.errors import NotFoundError
+from anki.notes import NoteId
 
 import parser
 
@@ -43,11 +45,7 @@ class LockedNotFound(RuntimeError):
 def import_flashcards(
     col: Collection, markdown: str, locked_ids: dict[str, int]
 ) -> dict[str, int]:
-    from anki.errors import NotFoundError
-    from anki.notes import NoteId
-
     flashcards = parser.flashcards_from_markdown(markdown)
-    # TODO partition flashcards by model to avoid switching models
     ids = locked_ids.copy()
     locked_not_found = {}
     for fc in flashcards:
