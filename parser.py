@@ -1,8 +1,8 @@
 from enum import StrEnum
 from typing import List, Protocol, cast
 
-import tree_sitter_markdown
-from tree_sitter import Language, Parser
+from mistletoe import Document
+from mistletoe.block_token import Heading, Paragraph, ThematicBreak
 
 
 class MODEL(StrEnum):
@@ -65,50 +65,53 @@ class Cloze(Flashcard):
         return self._back_extra
 
 
-def make_parser():
-    lang = Language(tree_sitter_markdown.language())
-    return Parser(lang)
+def _token_text(token) -> str:
+    if hasattr(token, "children") and token.children:
+        return "".join(_token_text(c) for c in token.children)
+    if hasattr(token, "content"):
+        return token.content
+    return ""
 
 
 def flashcards_from_markdown(markdown: str) -> List[Flashcard]:
-    parser = make_parser()
-    source = markdown.encode()
-    tree = parser.parse(source)
-
-    def node_text(node) -> str:
-        return source[node.start_byte : node.end_byte].decode().strip()
+    doc = Document(markdown)
+    children = doc.children
 
     flashcards = []
+    i = 0
+    while i < len(children):
+        token = children[i]
+        if isinstance(token, Heading) and token.level == 1:
+            card_id = _token_text(token)
+            i += 1
+            body = []
+            while i < len(children) and not (
+                isinstance(children[i], Heading) and children[i].level == 1
+            ):
+                body.append(children[i])
+                i += 1
 
-    for section in tree.root_node.children:
-        if section.type != "section":
-            continue
-
-        heading = next((c for c in section.children if c.type == "atx_heading"), None)
-        if heading is None:
-            continue
-
-        inline = next((c for c in heading.children if c.type == "inline"), None)
-        if inline is None:
-            continue
-        name = node_text(inline)
-
-        body = [c for c in section.children if c.type != "atx_heading"]
-        break_idx = next(
-            (i for i, c in enumerate(body) if c.type == "thematic_break"), None
-        )
-
-        if break_idx is not None:
-            front = "\n".join(
-                node_text(c) for c in body[:break_idx] if c.type == "paragraph"
+            break_idx = next(
+                (j for j, t in enumerate(body) if isinstance(t, ThematicBreak)), None
             )
-            back = "\n".join(
-                node_text(c) for c in body[break_idx + 1 :] if c.type == "paragraph"
-            )
-            flashcards.append(Basic(name, front, back))
+
+            if break_idx is not None:
+                front = "\n".join(
+                    _token_text(t) for t in body[:break_idx] if isinstance(t, Paragraph)
+                )
+                back = "\n".join(
+                    _token_text(t)
+                    for t in body[break_idx + 1 :]
+                    if isinstance(t, Paragraph)
+                )
+                flashcards.append(Basic(card_id, front, back))
+            else:
+                text = "\n".join(
+                    _token_text(t) for t in body if isinstance(t, Paragraph)
+                )
+                flashcards.append(Cloze(card_id, text))
         else:
-            front = "\n".join(node_text(c) for c in body if c.type == "paragraph")
-            flashcards.append(Cloze(name, front))
+            i += 1
 
     return flashcards
 
