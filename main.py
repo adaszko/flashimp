@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import pickle
 import sqlite3
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from anki.collection import Collection
@@ -24,6 +26,13 @@ class LockedNotFound(RuntimeError):
     def __init__(self, message):
         self.message = message
         super().__init__(self.message)
+
+
+@dataclass
+class Lockfile:
+    profile: str
+    deck: str
+    notes: dict[str, int]
 
 
 def get_last_loaded_profile(base_path: Path):
@@ -50,13 +59,30 @@ def get_last_loaded_profile(base_path: Path):
 
 
 def import_flashcards(
-    col: Collection, flashcards: list[Flashcard], locked_ids: dict[str, int]
-) -> dict[str, int]:
-    ids = locked_ids.copy()
+    col: Collection,
+    flashcards: list[Flashcard],
+    input_lockfile: Lockfile | None,
+    profile: str,
+    deck: str,
+) -> Lockfile:
+    if input_lockfile is None:
+        input_notes = {}
+    else:
+        input_notes = input_lockfile.notes.copy()
+
+    if input_lockfile is None:
+        output_lockfile = Lockfile(profile=profile, deck=deck, notes={})
+    else:
+        output_lockfile = Lockfile(
+            profile=input_lockfile.profile,
+            deck=input_lockfile.deck,
+            notes=input_notes,
+        )
+
     locked_not_found = {}
     for fc in flashcards:
-        if fc.id() in locked_ids:
-            note_id = locked_ids[fc.id()]
+        if fc.id() in input_notes:
+            note_id = input_notes[fc.id()]
             try:
                 existing_note = col.get_note(NoteId(note_id))
             except NotFoundError as _e:
@@ -76,29 +102,31 @@ def import_flashcards(
             new_note = col.new_note(model)
             new_note.fields = [parser.html_from_markdown(f) for f in fc.fields()]
             col.addNote(new_note)
-            ids[fc.id()] = new_note.id
+            output_lockfile.notes[fc.id()] = new_note.id
 
     if len(locked_not_found) > 0:
         raise LockedNotFound(locked_not_found)
 
-    return ids
+    return output_lockfile
 
 
-def get_locked_ids(lockfile_path: Path) -> dict[str, int]:
+def read_lockfile(lockfile_path: Path) -> Lockfile | None:
     try:
         text = lockfile_path.read_text()
     except FileNotFoundError:
-        return {}
-    ids = json.loads(text)
-    return ids
+        return None
+    obj = json.loads(text)
+    result = Lockfile(profile=obj["profile"], deck=obj["deck"], notes=obj["notes"])
+    return result
 
 
-def do_main(col: Collection, lockfile_path: Path):
+def do_main(col: Collection, lockfile_path: Path, profile: str, deck: str):
     markdown = Path("flashcards.md").read_text()
-    locked_ids = get_locked_ids(lockfile_path)
+    lockfile = read_lockfile(lockfile_path)
     flashcards = parser.flashcards_from_markdown(markdown)
-    new_locked_ids = import_flashcards(col, flashcards, locked_ids)
-    js = json.dumps(new_locked_ids)
+    new_locked_ids = import_flashcards(col, flashcards, lockfile, profile, deck)
+    d = dataclasses.asdict(new_locked_ids)
+    js = json.dumps(d, indent=2, sort_keys=True)
     lockfile_path.write_text(js)
 
 
@@ -110,7 +138,7 @@ def main() -> int:
     col = Collection(str(collection_db_path))
     exitcode = 0
     try:
-        do_main(col, lockfile_path)
+        do_main(col, lockfile_path, last_loaded_profile, "imported-from-markdown")
     except LockedNotFound as e:
         print("Flashcards exist in the lock file but not in the database")
         for id, nid in e.args[0].items():
