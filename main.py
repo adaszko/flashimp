@@ -26,12 +26,6 @@ class Anki:
             m["name"]: m["id"] for m in self.col.models.all()
         }
 
-        self.deck_name_to_id: dict[str, int] = {
-            d["name"]: d["id"] for d in self.col.decks.all()
-        }
-        self.deck_names: KeysView[str] = self.deck_name_to_id.keys()
-        self.n_decks: int = len(self.deck_names)
-
     def _init_load_profile(self, base_path: Path) -> None:
         """Load the Anki profile from database"""
         db_path = base_path / "prefs21.db"
@@ -92,13 +86,6 @@ class Anki:
         _exc_tb,
     ) -> None:
         self.col.close()
-
-    def delete_notes(self, ids: NoteId | list[NoteId]) -> None:
-        """Delete notes by note ids"""
-        if not isinstance(ids, list):
-            ids = [ids]
-
-        _ = self.col.remove_notes(ids)
 
     def get_model(self, model_name: str) -> NotetypeDict | None:
         """Get model from model name"""
