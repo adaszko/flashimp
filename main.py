@@ -6,9 +6,59 @@ import pickle
 import sqlite3
 import sys
 from pathlib import Path
-from typing import Any, Self
+from typing import Self
 
 import parser
+
+
+def get_last_loaded_profile(base_path: Path):
+    db_path = base_path / "prefs21.db"
+
+    if not db_path.exists():
+        console.print("Invalid base path!")
+        console.print(f"path = {base_path.absolute()}")
+        raise Abort()
+
+    # Load metadata and profiles from database
+    conn = sqlite3.connect(db_path)
+    try:
+        res = conn.execute(
+            "select cast(data as blob) from profiles where name = '_global'"
+        )
+        _meta = pickle.loads(res.fetchone()[0])
+
+        profiles = conn.execute(
+            "select name, cast(data as blob) from profiles where name != '_global'"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    return _meta.get("last_loaded_profile_name", profiles[0][0])
+
+
+def get_collection_db_path(base_path: Path, profile_name: str):
+    return str(base_path / profile_name / "collection.anki2")
+
+
+def get_collection(collection_db_path: Path):
+    from anki.collection import Collection
+    from anki.errors import DBError
+
+    # Save CWD (because Anki changes it)
+    save_cwd = os.getcwd()
+
+    try:
+        col = Collection(str(collection_db_path))
+        # Restore CWD (because Anki changes it)
+        os.chdir(save_cwd)
+        return col
+    except AssertionError as error:
+        console.print("Path to database is not valid!")
+        console.print(f"path = {self._collection_db_path}")
+        raise Abort() from error
+    except DBError as error:
+        console.print("Database is NA/locked!")
+        raise Abort() from error
 
 
 class Anki:
@@ -16,65 +66,15 @@ class Anki:
         self,
         base_path: Path,
     ):
-        self._meta: Any = None
         self._collection_db_path: str = ""
 
-        self._init_load_profile(base_path)
-        self._init_load_collection()
+        last_loaded_profile = get_last_loaded_profile(base_path)
+        collection_db_path = get_collection_db_path(base_path, last_loaded_profile)
+        self.col = get_collection(collection_db_path)
 
         self.model_name_to_id: dict[str, int] = {
             m["name"]: m["id"] for m in self.col.models.all()
         }
-
-    def _init_load_profile(self, base_path: Path) -> None:
-        """Load the Anki profile from database"""
-        db_path = base_path / "prefs21.db"
-
-        if not db_path.exists():
-            console.print("Invalid base path!")
-            console.print(f"path = {base_path.absolute()}")
-            raise Abort()
-
-        # Load metadata and profiles from database
-        conn = sqlite3.connect(db_path)
-        try:
-            res = conn.execute(
-                "select cast(data as blob) from profiles where name = '_global'"
-            )
-            self._meta = pickle.loads(res.fetchone()[0])
-
-            profiles = conn.execute(
-                "select name, cast(data as blob) from profiles where name != '_global'"
-            ).fetchall()
-        finally:
-            conn.close()
-
-        self._profile_name = self._meta.get("last_loaded_profile_name", profiles[0][0])
-
-        self._collection_db_path = str(
-            base_path / self._profile_name / "collection.anki2"
-        )
-
-    def _init_load_collection(self) -> None:
-        """Load the Anki collection"""
-        from anki.collection import Collection
-        from anki.errors import DBError
-
-        # Save CWD (because Anki changes it)
-        save_cwd = os.getcwd()
-
-        try:
-            self.col: Collection = Collection(self._collection_db_path)
-        except AssertionError as error:
-            console.print("Path to database is not valid!")
-            console.print(f"path = {self._collection_db_path}")
-            raise Abort() from error
-        except DBError as error:
-            console.print("Database is NA/locked!")
-            raise Abort() from error
-
-        # Restore CWD (because Anki changes it)
-        os.chdir(save_cwd)
 
     def __enter__(self) -> Self:
         return self
