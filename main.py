@@ -12,15 +12,13 @@ import parser
 
 
 def get_last_loaded_profile(base_path: Path):
-    db_path = base_path / "prefs21.db"
+    prefs_db_path = base_path / "prefs21.db"
 
-    if not db_path.exists():
-        console.print("Invalid base path!")
-        console.print(f"path = {base_path.absolute()}")
-        raise Abort()
+    if not prefs_db_path.exists():
+        raise FileNotFoundError(prefs_db_path)
 
     # Load metadata and profiles from database
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(prefs_db_path)
     try:
         res = conn.execute(
             "select cast(data as blob) from profiles where name = '_global'"
@@ -42,23 +40,15 @@ def get_collection_db_path(base_path: Path, profile_name: str):
 
 def get_collection(collection_db_path: Path):
     from anki.collection import Collection
-    from anki.errors import DBError
 
-    # Save CWD (because Anki changes it)
-    save_cwd = os.getcwd()
+    saved_cwd = os.getcwd()
 
     try:
         col = Collection(str(collection_db_path))
-        # Restore CWD (because Anki changes it)
-        os.chdir(save_cwd)
-        return col
-    except AssertionError as error:
-        console.print("Path to database is not valid!")
-        console.print(f"path = {self._collection_db_path}")
-        raise Abort() from error
-    except DBError as error:
-        console.print("Database is NA/locked!")
-        raise Abort() from error
+    finally:
+        os.chdir(saved_cwd)
+
+    return col
 
 
 class Anki:
@@ -66,8 +56,6 @@ class Anki:
         self,
         base_path: Path,
     ):
-        self._collection_db_path: str = ""
-
         last_loaded_profile = get_last_loaded_profile(base_path)
         collection_db_path = get_collection_db_path(base_path, last_loaded_profile)
         self.col = get_collection(collection_db_path)
