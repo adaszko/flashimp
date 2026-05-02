@@ -114,7 +114,10 @@ def plan(
             except NotFoundError:
                 locked_not_found[human_given_id] = note_id
                 continue
-            note.fields = [parser.html_from_markdown(f) for f in fc.fields()]
+            updated_fields = [parser.html_from_markdown(f) for f in fc.fields()]
+            if note.fields == updated_fields:
+                continue
+            note.fields = updated_fields
             action = ActionUpdate(human_given_id, note)
         else:
             model = col.models.by_name(fc.model())
@@ -180,9 +183,15 @@ def do_main(
         locked_notes = {}
     else:
         locked_notes = lockfile.notes
+
     actions = plan(col, flashcards, locked_notes)
-    for a in actions:
-        print(a)
+
+    if len(actions) == 0:
+        print("No changes")
+    else:
+        for a in actions:
+            print(a)
+
     new_lockfile = apply(col, actions, lockfile, initial_profile, initial_deck)
     d = dataclasses.asdict(new_lockfile)
     js = json.dumps(d, indent=2, sort_keys=True)
