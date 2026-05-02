@@ -7,10 +7,11 @@ import sqlite3
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 from anki.collection import Collection
 from anki.errors import NotFoundError
-from anki.notes import NoteId
+from anki.notes import Note, NoteId
 
 import parser
 from parser import Flashcard
@@ -41,6 +42,40 @@ class Lockfile:
     notes: dict[str, LockedNote]  # id -> (nid, notetypeid)
 
 
+class Action(Protocol):
+    def apply(self, col: Collection, lockfile: Lockfile): ...
+    def __str__(self) -> str: ...
+
+
+class ActionAdd(Action):
+    def __init__(self, human_given_id: str, model_id: int, note: Note):
+        self.human_given_id = human_given_id
+        self.model_id = model_id
+        self.note = note
+
+    def __str__(self) -> str:
+        return f"ADD {self.human_given_id} {self.note.items()}"
+
+    def apply(self, col: Collection, lockfile: Lockfile):
+        col.addNote(self.note)
+        lockfile.notes[self.human_given_id] = LockedNote(
+            mid=self.model_id, nid=self.note.id
+        )
+
+
+class ActionUpdate(Action):
+    def __init__(self, human_given_id: str, note: Note):
+        self.human_given_id = human_given_id
+        self.note = note
+
+    def __str__(self) -> str:
+        return f"UPDATE {self.human_given_id} {self.note.items()}"
+
+    def apply(self, col: Collection, lockfile: Lockfile):
+        lockfile  # silence unused var warning
+        col.update_note(self.note)
+
+
 def get_last_loaded_profile(base_path: Path):
     prefs_db_path = base_path / "prefs21.db"
 
@@ -64,56 +99,60 @@ def get_last_loaded_profile(base_path: Path):
     return _meta.get("last_loaded_profile_name", profiles[0][0])
 
 
-def import_flashcards(
-    col: Collection,
-    flashcards: list[Flashcard],
-    input_lockfile: Lockfile | None,
-    profile: str,
-    deck: str,
-) -> Lockfile:
-    if input_lockfile is None:
-        input_notes = {}
-    else:
-        input_notes = input_lockfile.notes.copy()
-
-    if input_lockfile is None:
-        output_lockfile = Lockfile(profile=profile, deck=deck, notes={})
-    else:
-        output_lockfile = Lockfile(
-            profile=input_lockfile.profile,
-            deck=input_lockfile.deck,
-            notes=input_notes,
-        )
+def plan(
+    col: Collection, flashcards: list[Flashcard], locked_notes: dict[str, LockedNote]
+) -> list[Action]:
+    actions = []
 
     locked_not_found = {}
     for fc in flashcards:
-        if fc.human_given_id() in input_notes:
-            note_id = input_notes[fc.human_given_id()].nid
+        human_given_id = fc.human_given_id()
+        if human_given_id in locked_notes:
+            note_id = locked_notes[human_given_id].nid
             try:
-                existing_note = col.get_note(NoteId(note_id))
-            except NotFoundError as _e:
-                locked_not_found[fc.human_given_id()] = note_id
+                note = col.get_note(NoteId(note_id))
+            except NotFoundError:
+                locked_not_found[human_given_id] = note_id
                 continue
-            existing_note.fields = [parser.html_from_markdown(f) for f in fc.fields()]
-            col.update_note(existing_note)
+            note.fields = [parser.html_from_markdown(f) for f in fc.fields()]
+            action = ActionUpdate(human_given_id, note)
         else:
             model = col.models.by_name(fc.model())
             if model is None:
                 raise UnknownModel(fc.model())
-            model_field_names = [field["name"] for field in model["flds"]]
-            assert len(model_field_names) == len(fc.fields()), (
-                model_field_names,
+            assert len(model["flds"]) == len(fc.fields()), (
+                model["flds"],
                 fc.fields(),
             )
             note = col.new_note(model)
             note.fields = [parser.html_from_markdown(f) for f in fc.fields()]
-            col.addNote(note)
-            output_lockfile.notes[fc.human_given_id()] = LockedNote(
-                mid=model["id"], nid=note.id
-            )
+            action = ActionAdd(human_given_id, model["id"], note)
+        actions.append(action)
 
     if len(locked_not_found) > 0:
         raise LockedNotFound(locked_not_found)
+
+    return actions
+
+
+def apply(
+    col: Collection,
+    actions: list[Action],
+    input_lockfile: Lockfile | None,
+    initial_profile: str,
+    initial_deck: str,
+):
+    if input_lockfile is None:
+        output_lockfile = Lockfile(profile=initial_profile, deck=initial_deck, notes={})
+    else:
+        output_lockfile = Lockfile(
+            profile=input_lockfile.profile,
+            deck=input_lockfile.deck,
+            notes=input_lockfile.notes.copy(),
+        )
+
+    for action in actions:
+        action.apply(col, output_lockfile)
 
     return output_lockfile
 
@@ -131,12 +170,21 @@ def read_lockfile(lockfile_path: Path) -> Lockfile | None:
     return result
 
 
-def do_main(col: Collection, lockfile_path: Path, profile: str, deck: str):
+def do_main(
+    col: Collection, lockfile_path: Path, initial_profile: str, initial_deck: str
+):
     markdown = Path("flashcards.md").read_text()
     lockfile = read_lockfile(lockfile_path)
     flashcards = parser.flashcards_from_markdown(markdown)
-    new_locked_ids = import_flashcards(col, flashcards, lockfile, profile, deck)
-    d = dataclasses.asdict(new_locked_ids)
+    if lockfile is None:
+        locked_notes = {}
+    else:
+        locked_notes = lockfile.notes
+    actions = plan(col, flashcards, locked_notes)
+    for a in actions:
+        print(a)
+    new_lockfile = apply(col, actions, lockfile, initial_profile, initial_deck)
+    d = dataclasses.asdict(new_lockfile)
     js = json.dumps(d, indent=2, sort_keys=True)
     lockfile_path.write_text(js)
 
