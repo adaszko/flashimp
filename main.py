@@ -144,7 +144,7 @@ def apply(
     input_lockfile: Lockfile | None,
     initial_profile: str,
     initial_deck: str,
-):
+) -> Lockfile:
     if input_lockfile is None:
         output_lockfile = Lockfile(profile=initial_profile, deck=initial_deck, notes={})
     else:
@@ -193,6 +193,10 @@ def do_main(
             print(a)
 
     new_lockfile = apply(col, actions, lockfile, initial_profile, initial_deck)
+
+    if new_lockfile == lockfile:
+        return
+
     d = dataclasses.asdict(new_lockfile)
     js = json.dumps(d, indent=2, sort_keys=True)
     lockfile_path.write_text(js)
