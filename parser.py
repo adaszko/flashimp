@@ -23,8 +23,8 @@ class Flashcard(Protocol):
 
 
 class Basic(Flashcard):
-    def __init__(self, id: str, front: str, back: str):
-        self._id = id
+    def __init__(self, human_given_id: str, front: str, back: str):
+        self._id = human_given_id
         self._front = front
         self._back = back
 
@@ -34,7 +34,7 @@ class Basic(Flashcard):
     def fields(self) -> list[str]:
         return [self._front, self._back]
 
-    def id(self) -> str:
+    def human_given_id(self) -> str:
         return self._id
 
     def front(self) -> str:
@@ -45,8 +45,8 @@ class Basic(Flashcard):
 
 
 class Cloze(Flashcard):
-    def __init__(self, id: str, text: str, back_extra: str = ""):
-        self._id = id
+    def __init__(self, human_given_id: str, text: str, back_extra: str = ""):
+        self._id = human_given_id
         self._text = text
         self._back_extra = back_extra
 
@@ -56,7 +56,7 @@ class Cloze(Flashcard):
     def fields(self) -> list[str]:
         return [self._text, self._back_extra]
 
-    def id(self) -> str:
+    def human_given_id(self) -> str:
         return self._id
 
     def text(self) -> str:
@@ -135,7 +135,7 @@ foo {{c1::bar}} baz
     basic = fcs[0]
     assert basic.model() == MODEL.BASIC
     basic = cast(Basic, basic)
-    assert basic.id() == "Id1"
+    assert basic.human_given_id() == "Id1"
     assert basic.front() == "Front"
     assert basic.back() == "Back"
     assert basic.fields() == ["Front", "Back"]
@@ -143,7 +143,7 @@ foo {{c1::bar}} baz
     cloze = fcs[1]
     assert cloze.model() == MODEL.CLOZE
     cloze = cast(Cloze, cloze)
-    assert cloze.id() == "Id2"
+    assert cloze.human_given_id() == "Id2"
     assert cloze.text() == "foo {{c1::bar}} baz"
     assert cloze.back_extra() == ""
     assert cloze.fields() == ["foo {{c1::bar}} baz", ""]
