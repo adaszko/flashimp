@@ -76,7 +76,7 @@ class ActionUpdate(Action):
         col.update_note(self.note)
 
 
-def get_last_loaded_profile(base_path: Path):
+def get_last_loaded_profile(base_path: Path) -> str:
     prefs_db_path = base_path / "prefs21.db"
 
     if not prefs_db_path.exists():

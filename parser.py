@@ -76,43 +76,37 @@ def _token_text(token) -> str:
 
 def flashcards_from_markdown(markdown: str) -> List[Flashcard]:
     doc = Document(markdown)
-    children = doc.children
+
+    if doc.children is None:
+        return []
+
+    # Group document children into per-card buckets: (heading, [body tokens])
+    groups: list[tuple] = []
+    for token in doc.children:
+        if isinstance(token, Heading) and token.level == 1:
+            groups.append((token, []))
+        elif groups:
+            groups[-1][1].append(token)
 
     flashcards = []
-    i = 0
-    while i < len(children):
-        token = children[i]
-        if isinstance(token, Heading) and token.level == 1:
-            card_id = _token_text(token)
-            i += 1
-            body = []
-            while i < len(children) and not (
-                isinstance(children[i], Heading) and children[i].level == 1
-            ):
-                body.append(children[i])
-                i += 1
-
-            break_idx = next(
-                (j for j, t in enumerate(body) if isinstance(t, ThematicBreak)), None
+    for heading, body in groups:
+        card_id = _token_text(heading)
+        break_idx = next(
+            (i for i, t in enumerate(body) if isinstance(t, ThematicBreak)), None
+        )
+        if break_idx is not None:
+            front = "\n".join(
+                _token_text(t) for t in body[:break_idx] if isinstance(t, Paragraph)
             )
-
-            if break_idx is not None:
-                front = "\n".join(
-                    _token_text(t) for t in body[:break_idx] if isinstance(t, Paragraph)
-                )
-                back = "\n".join(
-                    _token_text(t)
-                    for t in body[break_idx + 1 :]
-                    if isinstance(t, Paragraph)
-                )
-                flashcards.append(Basic(card_id, front, back))
-            else:
-                text = "\n".join(
-                    _token_text(t) for t in body if isinstance(t, Paragraph)
-                )
-                flashcards.append(Cloze(card_id, text))
+            back = "\n".join(
+                _token_text(t)
+                for t in body[break_idx + 1 :]
+                if isinstance(t, Paragraph)
+            )
+            flashcards.append(Basic(card_id, front, back))
         else:
-            i += 1
+            text = "\n".join(_token_text(t) for t in body if isinstance(t, Paragraph))
+            flashcards.append(Cloze(card_id, text))
 
     return flashcards
 
