@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import dataclasses
 import json
 import pickle
@@ -284,10 +285,14 @@ def read_lockfile(lockfile_path: Path) -> Lockfile | None:
 
 
 def do_main(
-    col: Collection, lockfile_path: Path, initial_profile: str, initial_deck: str
+    markdown_file_path: Path,
+    col: Collection,
+    lockfile_path: Path,
+    lockfile: Lockfile | None,
+    initial_profile: str,
+    initial_deck: str,
 ):
-    markdown = Path("flashcards.md").read_text()
-    lockfile = read_lockfile(lockfile_path)
+    markdown = markdown_file_path.read_text()
     flashcards = flashcards_from_markdown(markdown)
     if lockfile is None:
         locked_notes = {}
@@ -313,22 +318,50 @@ def do_main(
 
 
 def main() -> int:
-    base_path = Path.home() / "Library/Application Support/Anki2"
-    lockfile_path = Path("flashcards.lock")
-    last_loaded_profile = get_last_loaded_profile(base_path)
-    collection_db_path = base_path / last_loaded_profile / "collection.anki2"
+    anki_dir = Path.home() / "Library/Application Support/Anki2"
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--anki", help="Anki base directory", type=Path, default=anki_dir
+    )
+    parser.add_argument("--profile", help="Anki profile name on first import")
+    parser.add_argument("--deck", help="Anki deck name on first import")
+    parser.add_argument(
+        "--lockfile", help="Lockfile path", type=Path, default=Path("flashimp.lock")
+    )
+    parser.add_argument(
+        "markdown_file", type=Path, help="Markdown file containing flashcards"
+    )
+    args = parser.parse_args()
+
+    lockfile = read_lockfile(args.lockfile)
+    if args.profile is None:
+        args.profile = get_last_loaded_profile(args.anki)
+    if args.deck is None:
+        args.deck = args.markdown_file.name.removesuffix(".md")
+
+    collection_db_path = args.anki / args.profile / "collection.anki2"
     col = Collection(str(collection_db_path))
+
     exitcode = 0
     try:
-        do_main(col, lockfile_path, last_loaded_profile, "imported-from-markdown")
+        do_main(
+            args.markdown_file,
+            col,
+            args.lockfile,
+            lockfile,
+            args.profile,
+            args.deck,
+        )
     except LockedNotFound as e:
         print("Flashcards exist in the lock file but not in the database")
         for id, nid in e.args[0].items():
             print(f"{id}: {nid}")
-        print(f"Try deleting {lockfile_path} file")
+        print(f"Try deleting {args.lockfile} file")
         exitcode = 1
     finally:
         col.close()
+
     return exitcode
 
 
