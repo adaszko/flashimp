@@ -1,3 +1,10 @@
+# /// script
+# requires-python = ">=3.13"
+# dependencies = [
+#     "anki>=25.9.2",
+#     "mistletoe>=1.5.1",
+# ]
+# ///
 from __future__ import annotations
 
 import argparse
