@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
-import pickle
 import sqlite3
 import sys
 from dataclasses import dataclass
@@ -187,7 +186,7 @@ def html_from_markdown(markdown: str) -> str:
     return mistletoe.markdown(markdown)
 
 
-def get_last_loaded_profile(base_path: Path) -> str:
+def get_profiles(base_path: Path) -> list[str]:
     prefs_db_path = base_path / "prefs21.db"
 
     if not prefs_db_path.exists():
@@ -196,18 +195,13 @@ def get_last_loaded_profile(base_path: Path) -> str:
     # Load metadata and profiles from database
     conn = sqlite3.connect(prefs_db_path)
     try:
-        res = conn.execute(
-            "select cast(data as blob) from profiles where name = '_global'"
-        )
-        _meta = pickle.loads(res.fetchone()[0])
-
         profiles = conn.execute(
-            "select name, cast(data as blob) from profiles where name != '_global'"
+            "select name from profiles where name != '_global'"
         ).fetchall()
     finally:
         conn.close()
 
-    return _meta.get("last_loaded_profile_name", profiles[0][0])
+    return [p[0] for p in profiles]
 
 
 def plan(
@@ -317,14 +311,14 @@ def do_main(
     lockfile_path.write_text(js)
 
 
-def main() -> int:
-    anki_dir = Path.home() / "Library/Application Support/Anki2"
-
+def make_arg_parser(anki_dir: Path) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--anki", help="Anki base directory", type=Path, default=anki_dir
     )
-    parser.add_argument("--profile", help="Anki profile name on first import")
+    parser.add_argument(
+        "--profile", help="Anki profile name on first import"
+    )
     parser.add_argument("--deck", help="Anki deck name on first import")
     parser.add_argument(
         "--lockfile", help="Lockfile path", type=Path, default=Path("flashimp.lock")
@@ -332,11 +326,27 @@ def main() -> int:
     parser.add_argument(
         "markdown_file", type=Path, help="Markdown file containing flashcards"
     )
+    return parser
+
+
+def main() -> int:
+    anki_dir = Path.home() / "Library/Application Support/Anki2"
+
+    parser = make_arg_parser(anki_dir)
     args = parser.parse_args()
 
     lockfile = read_lockfile(args.lockfile)
-    if args.profile is None:
-        args.profile = get_last_loaded_profile(args.anki)
+    if lockfile is None:
+        if args.profile is None:
+            print(
+                "Lockfile does not exist, --profile is required; possible values:",
+                get_profiles(args.anki),
+            )
+            return 1
+    else:
+        if args.profile is not None:
+            print("warning: lockfile exists, ignoring --profile")
+        args.profile = lockfile.profile
     if args.deck is None:
         args.deck = args.markdown_file.name.removesuffix(".md")
 
@@ -400,3 +410,11 @@ foo {{c1::bar}} baz
 def test_html_from_markdown():
     html = html_from_markdown("""foo **bar** baz""")
     assert html.strip() == "<p>foo <strong>bar</strong> baz</p>"
+
+
+def test_arg_parser():
+    anki_dir = Path.home() / "Library/Application Support/Anki2"
+    parser = make_arg_parser(anki_dir)
+    args = parser.parse_args(["--profile", "experiments", "flashcards.md"])
+    assert args.profile == "experiments"
+    assert args.markdown_file == Path("flashcards.md")
