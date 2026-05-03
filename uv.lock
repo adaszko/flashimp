@@ -117,7 +117,7 @@ wheels = [
 ]
 
 [[package]]
-name = "flashcards-md"
+name = "flashimp"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
