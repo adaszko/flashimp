@@ -316,17 +316,29 @@ def make_arg_parser(anki_dir: Path) -> argparse.ArgumentParser:
     parser.add_argument(
         "--anki", help="Anki base directory", type=Path, default=anki_dir
     )
-    parser.add_argument(
-        "--profile", help="Anki profile name on first import"
-    )
+    parser.add_argument("--profile", help="Anki profile name on first import")
     parser.add_argument("--deck", help="Anki deck name on first import")
     parser.add_argument(
         "--lockfile", help="Lockfile path", type=Path, default=Path("flashimp.lock")
     )
     parser.add_argument(
-        "markdown_file", type=Path, help="Markdown file containing flashcards"
+        "markdown_file",
+        type=Path,
+        help="Markdown file containing flashcards",
+        nargs="?",
     )
+    parser.add_argument("--selftest", action="store_true")
     return parser
+
+
+def selftest():
+    import inspect
+
+    current_module = sys.modules[__name__]
+    fns = inspect.getmembers(current_module, inspect.isfunction)
+    test_fns = [f for (name, f) in fns if name.startswith("test_")]
+    for fn in test_fns:
+        fn()
 
 
 def main() -> int:
@@ -334,6 +346,9 @@ def main() -> int:
 
     parser = make_arg_parser(anki_dir)
     args = parser.parse_args()
+
+    if args.selftest:
+        return selftest()
 
     lockfile = read_lockfile(args.lockfile)
     if lockfile is None:
@@ -375,10 +390,6 @@ def main() -> int:
     return exitcode
 
 
-if __name__ == "__main__":
-    sys.exit(main())
-
-
 def test_flashcards_from_markdown():
     fcs = flashcards_from_markdown("""
 # Id1
@@ -418,3 +429,7 @@ def test_arg_parser():
     args = parser.parse_args(["--profile", "experiments", "flashcards.md"])
     assert args.profile == "experiments"
     assert args.markdown_file == Path("flashcards.md")
+
+
+if __name__ == "__main__":
+    sys.exit(main())

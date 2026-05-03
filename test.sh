@@ -5,7 +5,7 @@ set -o nounset
 set -o pipefail
 
 main () {
-    uv run pytest
+    uv run main.py --selftest
 }
 
 main "$@"
