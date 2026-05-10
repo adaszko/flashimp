@@ -5,10 +5,10 @@ Changed Back
 # Card2
 foo {{c1::bar}} baz
 # Card3
-dupa
+bleh
 # Card4
-zupa
+bar
 # Card5
-kupa
+baz
 # Card6
-kupa
+quux
