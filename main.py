@@ -357,6 +357,10 @@ def main() -> int:
     if args.selftest:
         return selftest()
 
+    if args.markdown_file is None:
+        print("Expected markdown file path as argument")
+        return 1
+
     lockfile = read_lockfile(args.lockfile)
     if lockfile is None:
         if args.profile is None:
