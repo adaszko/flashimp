@@ -304,9 +304,13 @@ def do_main(
 
     if len(actions) == 0:
         print("No changes")
-    else:
-        for a in actions:
-            print(a)
+        return
+
+    for a in actions:
+        print(a)
+    response = input("APPLY CHANGES (type YES to confirm)? ")
+    if response != "YES":
+        return
 
     new_lockfile = apply(col, actions, lockfile, initial_profile, initial_deck)
 
