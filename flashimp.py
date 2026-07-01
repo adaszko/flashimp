@@ -214,7 +214,10 @@ def get_profiles(base_path: Path) -> list[str]:
 
 
 def plan(
-    col: Collection, flashcards: list[Flashcard], locked_notes: dict[str, LockedNote]
+    col: Collection,
+    flashcards: list[Flashcard],
+    initial_deck: str,
+    locked_notes: dict[str, LockedNote],
 ) -> list[Action]:
     actions = []
 
@@ -242,6 +245,10 @@ def plan(
                 fc.fields(),
             )
             note = col.new_note(model)
+            note_type = note.note_type()
+            note_type["did"] = [
+                d["id"] for d in col.decks.all() if d["name"] == initial_deck
+            ][0]
             note.fields = [html_from_markdown(f) for f in fc.fields()]
             action = ActionAdd(human_given_id, model["id"], note)
         actions.append(action)
@@ -302,7 +309,7 @@ def do_main(
     else:
         locked_notes = lockfile.notes
 
-    actions = plan(col, flashcards, locked_notes)
+    actions = plan(col, flashcards, initial_deck, locked_notes)
 
     if len(actions) == 0:
         print("No changes")
