@@ -24,6 +24,8 @@ from anki.notes import Note, NoteId
 from mistletoe import Document
 from mistletoe.block_token import Heading, Paragraph, ThematicBreak
 
+PROFILE_DEFAULT = "flashimp"
+
 
 class UnknownModel(RuntimeError):
     def __init__(self, message):
@@ -327,7 +329,11 @@ def make_arg_parser(anki_dir: Path) -> argparse.ArgumentParser:
     parser.add_argument(
         "--anki", help="Anki base directory", type=Path, default=anki_dir
     )
-    parser.add_argument("--profile", help="Anki profile name on first import")
+    parser.add_argument(
+        "--profile",
+        help="Anki profile name on first import",
+        default=PROFILE_DEFAULT,
+    )
     parser.add_argument("--deck", help="Anki deck name on first import")
     parser.add_argument(
         "--lockfile", help="Lockfile path", type=Path, default=Path("flashimp.lock")
@@ -374,7 +380,7 @@ def main() -> int:
             )
             return 1
     else:
-        if args.profile is not None:
+        if args.profile != PROFILE_DEFAULT:
             print("warning: lockfile exists, ignoring --profile")
         args.profile = lockfile.profile
     if args.deck is None:
