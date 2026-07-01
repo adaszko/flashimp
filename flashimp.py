@@ -247,6 +247,7 @@ def plan(
             )
             note = col.new_note(model)
             note_type = note.note_type()
+            assert note_type is not None, note_type
             note_type["did"] = deck_id
             note.fields = [html_from_markdown(f) for f in fc.fields()]
             action = ActionAdd(human_given_id, model["id"], note)
@@ -344,7 +345,9 @@ def make_arg_parser(anki_dir: Path) -> argparse.ArgumentParser:
     )
     parser.add_argument("--deck", help="Anki deck name on first import")
     parser.add_argument(
-        "--lockfile", help="Lockfile path", type=Path, default=Path("flashimp.lock")
+        "--lockfile",
+        help="Lockfile path",
+        type=Path,
     )
     parser.add_argument(
         "markdown_file",
@@ -379,7 +382,14 @@ def main() -> int:
         parser.print_help()
         return 1
 
-    lockfile = read_lockfile(args.lockfile)
+    if args.lockfile is None:
+        lockfile_path = Path(
+            "{}.lock".format(args.markdown_file.name.removesuffix(".md"))
+        )
+    else:
+        lockfile_path = Path(args.lockfile)
+
+    lockfile = read_lockfile(lockfile_path)
     if lockfile is None:
         if args.profile is None:
             print(
@@ -402,7 +412,7 @@ def main() -> int:
         do_main(
             args.markdown_file,
             col,
-            args.lockfile,
+            lockfile_path,
             lockfile,
             args.profile,
             args.deck,
@@ -411,7 +421,7 @@ def main() -> int:
         print("Flashcards exist in the lock file but not in the database")
         for id, nid in e.args[0].items():
             print(f"{id}: {nid}")
-        print(f"Try deleting {args.lockfile} file")
+        print(f"Try deleting {lockfile_path} file")
         exitcode = 1
     finally:
         col.close()
