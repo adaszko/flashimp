@@ -375,7 +375,7 @@ def main() -> int:
         return selftest()
 
     if args.markdown_file is None:
-        print("Expected markdown file path as argument")
+        parser.print_help()
         return 1
 
     lockfile = read_lockfile(args.lockfile)
