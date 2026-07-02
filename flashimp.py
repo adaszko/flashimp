@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import itertools
 import json
+import shutil
 import sqlite3
 import sys
 from dataclasses import dataclass
@@ -18,12 +20,12 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Generator, List, Protocol, cast
 
-import mistletoe
 from anki.collection import Collection
 from anki.errors import NotFoundError
 from anki.notes import Note, NoteId
 from mistletoe import Document
-from mistletoe.block_token import Heading, Paragraph, ThematicBreak
+from mistletoe.block_token import Heading, ThematicBreak
+from mistletoe.html_renderer import HTMLRenderer
 from mistletoe.span_token import Image
 from mistletoe.token import Token
 
@@ -136,6 +138,20 @@ class ActionAdd(Action):
         )
 
 
+class ActionCopyImage(Action):
+    def __init__(self, src_path: Path, dest_path: Path):
+        self.src_path = src_path
+        self.dest_path = dest_path
+
+    def __str__(self) -> str:
+        return f"COPY {self.src_path} {self.dest_path}"
+
+    def apply(self, col: Collection, lockfile: Lockfile):
+        col  # ignore unused
+        lockfile  # ignore unused
+        shutil.copyfile(self.src_path, self.dest_path)
+
+
 class ActionUpdate(Action):
     def __init__(self, human_given_id: str, note: Note):
         self.human_given_id = human_given_id
@@ -157,40 +173,57 @@ def _token_text(token) -> str:
     return ""
 
 
-def flashcards_from_markdown(markdown: str) -> List[Flashcard]:
+def headings_from_markdown(markdown: str) -> list[str]:
+    """Breaks a markdown document into a list of level 1 headings"""
     doc = Document(markdown)
-
+    assert isinstance(doc, Document)
     if doc.children is None:
+        # An empty document
         return []
+    heading_line_numbers = [
+        heading.line_number for heading in doc.children if isinstance(heading, Heading)
+    ]
+    if len(heading_line_numbers) == 0:
+        return []
+    lines = markdown.splitlines()
+    result = []
+    for line_number, next_line_number in itertools.pairwise(heading_line_numbers):
+        flashcard = "\n".join(lines[line_number - 1 : next_line_number - 1])
+        result.append(flashcard)
+    result.append("\n".join(lines[heading_line_numbers[-1] - 1 :]))
+    return result
 
-    # Group document children into per-card buckets: (heading, [body tokens])
-    groups: list[tuple] = []
-    for token in doc.children:
-        if isinstance(token, Heading) and token.level == 1:
-            groups.append((token, []))
-        elif groups:
-            groups[-1][1].append(token)
+
+def flashcards_from_markdown(markdown: str) -> List[Flashcard]:
+    headings = headings_from_markdown(markdown)
 
     flashcards = []
-    for heading, body in groups:
-        card_id = _token_text(heading)
-        break_idx = next(
-            (i for i, t in enumerate(body) if isinstance(t, ThematicBreak)), None
-        )
-        if break_idx is not None:
-            front = "\n".join(
-                _token_text(t) for t in body[:break_idx] if isinstance(t, Paragraph)
-            )
-            back = "\n".join(
-                _token_text(t)
-                for t in body[break_idx + 1 :]
-                if isinstance(t, Paragraph)
-            )
-            flashcards.append(Basic(card_id, front, back))
+    for heading in headings:
+        doc = Document(heading)
+        tokens = gen_markdown_tokens(doc)
+        thematic_breaks = [
+            token for token in tokens if isinstance(token, ThematicBreak)
+        ]
+        assert doc.children is not None
+        assert isinstance(doc.children[0], Heading)
+        card_id = doc.children[0].content
+        lines = heading.splitlines()
+        if len(thematic_breaks) > 0:
+            thematic_break = thematic_breaks[0]
+            assert len(doc.children) > 1
+            front_start_line_number = doc.children[1].line_number
+            front_lines = lines[
+                front_start_line_number - 1 : thematic_break.line_number - 1
+            ]
+            back_lines = lines[thematic_break.line_number :]
+            fc = Basic(card_id, "\n".join(front_lines), "\n".join(back_lines))
+            flashcards.append(fc)
         else:
-            text = "\n".join(_token_text(t) for t in body if isinstance(t, Paragraph))
-            flashcards.append(Cloze(card_id, text))
-
+            assert len(doc.children) > 1
+            body_line_number = doc.children[1].line_number
+            text = "\n".join(lines[body_line_number - 1 :])
+            fc = Cloze(card_id, text)
+            flashcards.append(fc)
     return flashcards
 
 
@@ -206,7 +239,7 @@ def gen_markdown_tokens(doc: Document) -> Generator[Token, None, None]:
     return walk(doc)
 
 
-def assets_from_markdown(markdown: str) -> list[str]:
+def images_from_markdown(markdown: str) -> list[str]:
     doc = Document(markdown)
     image_tokens = [tok for tok in gen_markdown_tokens(doc) if isinstance(tok, Image)]
     srcs = [tok.src for tok in image_tokens]
@@ -214,7 +247,12 @@ def assets_from_markdown(markdown: str) -> list[str]:
 
 
 def html_from_markdown(markdown: str) -> str:
-    return mistletoe.markdown(markdown)
+    doc = Document(markdown)
+    for token in gen_markdown_tokens(doc):
+        if not isinstance(token, Image):
+            continue
+        token.src = Path(token.src).name
+    return HTMLRenderer().render(doc)
 
 
 def get_profiles(base_path: Path) -> list[str]:
@@ -235,11 +273,31 @@ def get_profiles(base_path: Path) -> list[str]:
     return [p[0] for p in profiles]
 
 
+def flatten(list_of_lists):
+    "Flatten one level of nesting."
+    return itertools.chain.from_iterable(list_of_lists)
+
+
+def plan_copy_image(
+    markdown: str, collection_media_path: Path
+) -> list[ActionCopyImage]:
+    result = []
+    image_srcs = images_from_markdown(markdown)
+    for src in image_srcs:
+        src_path = Path(src)
+        assert src_path.exists()
+        dest_path = collection_media_path / src_path.name
+        if not dest_path.exists():
+            result.append(ActionCopyImage(src_path, dest_path))
+    return result
+
+
 def plan(
     col: Collection,
     flashcards: list[Flashcard],
     deck_id: int,
     locked_notes: dict[str, LockedNote],
+    collection_media_path: Path,
 ) -> list[Action]:
     actions = []
 
@@ -253,11 +311,17 @@ def plan(
             except NotFoundError:
                 locked_not_found[human_given_id] = note_id
                 continue
+
+            for field in fc.fields():
+                local_actions = plan_copy_image(field, collection_media_path)
+                actions.extend(local_actions)
+
             updated_fields = [html_from_markdown(f) for f in fc.fields()]
             if note.fields == updated_fields:
                 continue
             note.fields = updated_fields
             action = ActionUpdate(human_given_id, note)
+            actions.append(action)
         else:
             model = col.models.by_name(fc.model())
             if model is None:
@@ -272,7 +336,10 @@ def plan(
             note_type["did"] = deck_id
             note.fields = [html_from_markdown(f) for f in fc.fields()]
             action = ActionAdd(human_given_id, model["id"], note)
-        actions.append(action)
+            actions.append(action)
+
+            for field in fc.fields():
+                actions.extend(plan_copy_image(field, collection_media_path))
 
     if len(locked_not_found) > 0:
         raise LockedNotFound(locked_not_found)
@@ -322,6 +389,7 @@ def do_main(
     lockfile: Lockfile | None,
     initial_profile: str,
     initial_deck: str,
+    collection_media_path: Path,
 ):
     markdown = markdown_file_path.read_text()
     flashcards = flashcards_from_markdown(markdown)
@@ -332,7 +400,7 @@ def do_main(
 
     deck_id = col.decks.id(initial_deck, create=True)
     assert deck_id is not None
-    actions = plan(col, flashcards, deck_id, locked_notes)
+    actions = plan(col, flashcards, deck_id, locked_notes, collection_media_path)
 
     if len(actions) == 0:
         print("No changes")
@@ -434,6 +502,8 @@ def main() -> int:
     collection_db_path = args.anki / args.profile / "collection.anki2"
     col = Collection(str(collection_db_path))
 
+    collection_media_path = args.anki / args.profile / "collection.media"
+
     exitcode = 0
     try:
         do_main(
@@ -443,6 +513,7 @@ def main() -> int:
             lockfile,
             args.profile,
             args.deck,
+            collection_media_path,
         )
     except LockedNotFound as e:
         print("Flashcards exist in the lock file but not in the database")
@@ -454,6 +525,20 @@ def main() -> int:
         col.close()
 
     return exitcode
+
+
+def test_heading_from_markdown():
+    headings = headings_from_markdown("""
+# Id1
+Front
+***
+Back
+# Id2
+foo {{c1::bar}} baz
+""")
+    assert headings == ["# Id1\nFront\n***\nBack", "# Id2\nfoo {{c1::bar}} baz"], (
+        headings
+    )
 
 
 def test_flashcards_from_markdown():
@@ -471,8 +556,8 @@ foo {{c1::bar}} baz
     assert basic.model() == MODEL.BASIC
     basic = cast(Basic, basic)
     assert basic.human_given_id() == "Id1"
-    assert basic.front() == "Front"
-    assert basic.back() == "Back"
+    assert basic.front() == "Front", basic.front()
+    assert basic.back() == "Back", basic.back()
     assert basic.fields() == ["Front", "Back"]
 
     cloze = fcs[1]
@@ -485,7 +570,7 @@ foo {{c1::bar}} baz
 
 
 def test_assets_from_markdown():
-    assets = assets_from_markdown("""
+    assets = images_from_markdown("""
 # Deployment::Blue/Green
 
 ![requests](lfs/grafana-blue-green.png)
@@ -497,7 +582,7 @@ Blue/Green
     assert len(assets) == 1
     assert assets == ["lfs/grafana-blue-green.png"]
 
-    assets = assets_from_markdown("""
+    assets = images_from_markdown("""
 # Deployment::Recreate
 
 ![requests](lfs/grafana-recreate.png)
