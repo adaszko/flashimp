@@ -16,7 +16,7 @@ import sys
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import List, Protocol, cast
+from typing import Generator, List, Protocol, cast
 
 import mistletoe
 from anki.collection import Collection
@@ -24,6 +24,8 @@ from anki.errors import NotFoundError
 from anki.notes import Note, NoteId
 from mistletoe import Document
 from mistletoe.block_token import Heading, Paragraph, ThematicBreak
+from mistletoe.span_token import Image
+from mistletoe.token import Token
 
 PROFILE_DEFAULT = "flashimp"
 
@@ -190,6 +192,25 @@ def flashcards_from_markdown(markdown: str) -> List[Flashcard]:
             flashcards.append(Cloze(card_id, text))
 
     return flashcards
+
+
+def gen_markdown_tokens(doc: Document) -> Generator[Token, None, None]:
+    def walk(token: Token):
+        yield token
+        if token.children is None:
+            return
+        for child in token.children:
+            for x in walk(child):
+                yield x
+
+    return walk(doc)
+
+
+def assets_from_markdown(markdown: str) -> list[str]:
+    doc = Document(markdown)
+    image_tokens = [tok for tok in gen_markdown_tokens(doc) if isinstance(tok, Image)]
+    srcs = [tok.src for tok in image_tokens]
+    return srcs
 
 
 def html_from_markdown(markdown: str) -> str:
@@ -461,6 +482,40 @@ foo {{c1::bar}} baz
     assert cloze.text() == "foo {{c1::bar}} baz"
     assert cloze.back_extra() == ""
     assert cloze.fields() == ["foo {{c1::bar}} baz", ""]
+
+
+def test_assets_from_markdown():
+    assets = assets_from_markdown("""
+# Deployment::Blue/Green
+
+![requests](lfs/grafana-blue-green.png)
+
+***
+
+Blue/Green
+""")
+    assert len(assets) == 1
+    assert assets == ["lfs/grafana-blue-green.png"]
+
+    assets = assets_from_markdown("""
+# Deployment::Recreate
+
+![requests](lfs/grafana-recreate.png)
+
+***
+
+Recreate
+
+# Deployment::Rolling
+
+![requests](lfs/grafana-ramped.png)
+
+***
+
+Rolling
+""")
+    assert len(assets) == 2
+    assert assets == ["lfs/grafana-recreate.png", "lfs/grafana-ramped.png"]
 
 
 def test_html_from_markdown():
