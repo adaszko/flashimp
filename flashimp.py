@@ -122,7 +122,7 @@ class Action(Protocol):
     def __str__(self) -> str: ...
 
 
-class ActionAdd(Action):
+class ActionAddNote(Action):
     def __init__(self, human_given_id: str, model_id: int, note: Note):
         self.human_given_id = human_given_id
         self.model_id = model_id
@@ -152,7 +152,7 @@ class ActionCopyImage(Action):
         shutil.copyfile(self.src_path, self.dest_path)
 
 
-class ActionUpdate(Action):
+class ActionUpdateNote(Action):
     def __init__(self, human_given_id: str, note: Note):
         self.human_given_id = human_given_id
         self.note = note
@@ -163,14 +163,6 @@ class ActionUpdate(Action):
     def apply(self, col: Collection, lockfile: Lockfile):
         lockfile  # silence unused var warning
         col.update_note(self.note)
-
-
-def _token_text(token) -> str:
-    if hasattr(token, "children") and token.children:
-        return "".join(_token_text(c) for c in token.children)
-    if hasattr(token, "content"):
-        return token.content
-    return ""
 
 
 def headings_from_markdown(markdown: str) -> list[str]:
@@ -320,7 +312,7 @@ def plan(
             if note.fields == updated_fields:
                 continue
             note.fields = updated_fields
-            action = ActionUpdate(human_given_id, note)
+            action = ActionUpdateNote(human_given_id, note)
             actions.append(action)
         else:
             model = col.models.by_name(fc.model())
@@ -335,7 +327,7 @@ def plan(
             assert note_type is not None, note_type
             note_type["did"] = deck_id
             note.fields = [html_from_markdown(f) for f in fc.fields()]
-            action = ActionAdd(human_given_id, model["id"], note)
+            action = ActionAddNote(human_given_id, model["id"], note)
             actions.append(action)
 
             for field in fc.fields():
