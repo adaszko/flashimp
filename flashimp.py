@@ -336,21 +336,27 @@ def do_main(
 def make_arg_parser(anki_dir: Path) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--anki", help="Anki base directory", type=Path, default=anki_dir
+        "--anki",
+        help=f"Anki base directory (defaults to {anki_dir})",
+        type=Path,
+        default=anki_dir,
     )
     parser.add_argument(
         "--profile",
-        help="Anki profile name on first import",
+        help=f"Anki profile name on first import (defaults to {PROFILE_DEFAULT})",
         default=PROFILE_DEFAULT,
     )
-    parser.add_argument("--deck", help="Anki deck name on first import")
+    parser.add_argument(
+        "--deck",
+        help="Anki deck name on first import (defaults to MARKDOWN_FILE basename)",
+    )
     parser.add_argument(
         "--lockfile",
         help="Lockfile path",
         type=Path,
     )
     parser.add_argument(
-        "markdown_file",
+        "MARKDOWN_FILE",
         type=Path,
         help="Markdown file containing flashcards",
         nargs="?",
@@ -378,13 +384,13 @@ def main() -> int:
     if args.selftest:
         return selftest()
 
-    if args.markdown_file is None:
+    if args.MARKDOWN_FILE is None:
         parser.print_help()
         return 1
 
     if args.lockfile is None:
         lockfile_path = Path(
-            "{}.lock".format(args.markdown_file.name.removesuffix(".md"))
+            "{}.lock".format(args.MARKDOWN_FILE.name.removesuffix(".md"))
         )
     else:
         lockfile_path = Path(args.lockfile)
@@ -402,7 +408,7 @@ def main() -> int:
             print("warning: lockfile exists, ignoring --profile")
         args.profile = lockfile.profile
     if args.deck is None:
-        args.deck = args.markdown_file.name.removesuffix(".md")
+        args.deck = args.MARKDOWN_FILE.name.removesuffix(".md")
 
     collection_db_path = args.anki / args.profile / "collection.anki2"
     col = Collection(str(collection_db_path))
@@ -410,7 +416,7 @@ def main() -> int:
     exitcode = 0
     try:
         do_main(
-            args.markdown_file,
+            args.MARKDOWN_FILE,
             col,
             lockfile_path,
             lockfile,
@@ -467,7 +473,7 @@ def test_arg_parser():
     parser = make_arg_parser(anki_dir)
     args = parser.parse_args(["--profile", "experiments", "flashcards.md"])
     assert args.profile == "experiments"
-    assert args.markdown_file == Path("flashcards.md")
+    assert args.MARKDOWN_FILE == Path("flashcards.md")
 
 
 if __name__ == "__main__":
