@@ -11,7 +11,7 @@ steps are necessary.
     * ⚠️ Manually created Anki profile called `flashimp` by default needs to exist ⚠️.  It's to keep flashimp
       flashcards isolated from other decks for safety.
 
-```
+```bash
 $ cat <<EOF >flashcards.md
 # Example Cloze Deletion Card
 foo {{c1::bar}} baz
@@ -20,11 +20,17 @@ Front Question
 ***
 Back Answer
 EOF
+```
+
+```bash
 $ ./flashimp.py flashcards.md
 ADD Example Cloze Deletion Card [...]
 ADD Example Front/Back Card [...]
 APPLY CHANGES (type YES to confirm)?
 YES
+```
+
+```bash
 $ cat flashcards.lock
 {
   "deck": "flashcards",
@@ -40,6 +46,9 @@ $ cat flashcards.lock
   },
   "profile": "flashimp"
 }
+```
+
+```bash
 $ ./flashimp.py flashcards.md
 No changes
 ```
